@@ -329,6 +329,9 @@ class TerminusHandler
     PDRList effecterAuxNamePDRs{};
     /** @brief List of numeric effecter PDRs */
     PDRList effecterPDRs{};
+
+    /** @brief Terminus handle */
+    uint16_t terminusHandle = 0;
     /** @brief List of mapping form effecter key to effecter name */
     auxNameMapping _auxNameMaps;
     /** @brief DBus object state. */

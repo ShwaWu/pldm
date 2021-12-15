@@ -26,6 +26,19 @@ extern "C" {
 #define PLDM_GET_PDR_REQ_BYTES 13
 
 #define PLDM_SET_EVENT_RECEIVER_RESP_BYTES 1
+
+/* Platform event supported request */
+#define PLDM_EVENT_SUPPORTED_REQ_BYTES 1
+#define PLDM_EVENT_SUPPORTED_RESP_BYTES 20
+#define PLDM_EVENT_MESSAGE_SUPPORTED_MIN_RESP_BYTES 4
+
+#define PLDM_EVENT_MESSAGE_BUFFER_SIZE_REQ_BYTES 1
+#define PLDM_EVENT_MESSAGE_BUFFER_SIZE_RESP_BYTES 3
+#define PLDM_EVENT_MESSAGE_BUFFER_MAX_BUFFER_SIZE 256
+
+#define PLDM_POLL_FOR_PLATFORM_EVENT_MESSAGE_REQ_BYTES 8
+#define PLDM_POLL_FOR_PLATFORM_EVENT_MESSAGE_MIN_RESP_BYTES 18
+
 /* Minimum response length */
 #define PLDM_GET_PDR_MIN_RESP_BYTES 12
 #define PLDM_GET_NUMERIC_EFFECTER_VALUE_MIN_RESP_BYTES 5
@@ -52,6 +65,8 @@ extern "C" {
 /* Minimum length of data for pldmPDRRepositoryChgEvent */
 #define PLDM_PDR_REPOSITORY_CHG_EVENT_MIN_LENGTH 2
 #define PLDM_PDR_REPOSITORY_CHANGE_RECORD_MIN_LENGTH 2
+
+#define PLDM_MSG_POLL_EVENT_LENGTH 7
 
 #define PLDM_INVALID_EFFECTER_ID 0xFFFF
 #define PLDM_TID_RESERVED 0xFF
@@ -122,7 +137,10 @@ enum pldm_platform_commands {
 	PLDM_SET_STATE_EFFECTER_STATES = 0x39,
 	PLDM_GET_PDR_REPOSITORY_INFO = 0x50,
 	PLDM_GET_PDR = 0x51,
-	PLDM_PLATFORM_EVENT_MESSAGE = 0x0A
+	PLDM_PLATFORM_EVENT_MESSAGE = 0x0A,
+	PLDM_POLL_FOR_EVENT_MESSAGE = 0x0B,
+	PLDM_EVENT_MESSAGE_SUPPORTED = 0xC,
+	PLDM_EVENT_MESSAGE_BUFFER_SIZE = 0xD,
 };
 
 /** @brief PLDM PDR types
@@ -657,6 +675,44 @@ struct pldm_set_event_receiver_req {
 	uint16_t heartbeat_timer;
 } __attribute__((packed));
 
+/** @struct pldm_platform_event_message_supported_req
+ *
+ *  structure representing PlatformEventMessageSupported command request data
+ */
+struct pldm_event_message_supported_req {
+	uint8_t format_version;
+} __attribute__((packed));
+
+/** @struct pldm_event_message_supported_response
+ *
+ *  structure representing EventMessageSupported command response data
+ */
+struct pldm_event_message_supported_resp {
+	uint8_t completion_code;
+	uint8_t synchrony_configuration;
+	bitfield8_t synchrony_configuration_supported;
+	uint8_t number_event_class_returned;
+	uint8_t event_class[1];
+} __attribute__((packed));
+
+/** @struct pldm_event_message_buffer_size_req
+ *
+ *  structure representing EventMessageBufferSizes command request data
+ */
+struct pldm_event_message_buffer_size_req {
+	uint8_t buffer_size;
+} __attribute__((packed));
+
+/** @struct pldm_event_message_buffer_size_resp
+ *
+ *  structure representing EventMessageBufferSizes command response data
+ * data
+ */
+struct pldm_event_message_buffer_size_resp {
+	uint8_t completion_code;
+	uint16_t terminus_max_buffer_size;
+} __attribute__((packed));
+
 /** @struct pldm_set_numeric_effecter_value_req
  *
  *  structure representing SetNumericEffecterValue request packet
@@ -738,6 +794,33 @@ struct pldm_platform_event_message_req {
 	uint8_t event_data[1];
 } __attribute__((packed));
 
+/** @struct pldm_poll_for_platform_event_message_req
+ *
+ *  structure representing PollForPlatformEventMessage command request data
+ */
+struct pldm_poll_for_platform_event_message_req {
+	uint8_t format_version;
+	uint8_t transfer_operation_flag;
+	uint32_t data_transfer_handle;
+	uint8_t event_id_to_acknowledge;
+} __attribute__((packed));
+
+/** @struct pldm_poll_for_platform_event_message_resp
+ *
+ *  structure representing PollForPlatformEventMessage command response data
+ */
+struct pldm_poll_for_platform_event_message_resp {
+	uint8_t completion_code;
+	uint8_t tid;
+	uint16_t event_id;
+	uint32_t next_data_transfer_handle;
+	uint8_t transfer_flag;
+	uint8_t event_class;
+	uint32_t event_data_size;
+	uint8_t event_data[1];
+	uint32_t event_data_integrity_checksum;
+} __attribute__((packed));
+
 /** @struct pldm_platform_event_message_response
  *
  *  structure representing PlatformEventMessage command response data
@@ -755,6 +838,16 @@ struct pldm_pdr_repository_chg_event_data {
 	uint8_t event_data_format;
 	uint8_t number_of_change_records;
 	uint8_t change_records[1];
+} __attribute__((packed));
+
+/** @struct pldm_msg_poll_event_data
+ *
+ *  structure representing pldm_msg_poll_event_data class eventData
+ */
+struct pldm_msg_poll_event_data {
+	uint8_t format_version;
+	uint16_t event_id;
+	uint32_t data_transfer_handle;
 } __attribute__((packed));
 
 /** @struct pldm_pdr_repository_chg_event_change_record_data
@@ -1282,6 +1375,21 @@ int decode_platform_event_message_req(const struct pldm_msg *msg,
 				      uint8_t *event_class,
 				      size_t *event_data_offset);
 
+/** @brief Decode PollForEventMessage request data
+ *  @param[in] msg - Request message
+ *  @param[in] payload_length - Length of response message payload
+ *  @param[out] format_version - Version of the event format
+ *  @param[out] transfer_operation_flag - The transfer operation flag
+ *  @param[out] data_transfer_handle - The data transfer handle
+ *  @param[out] event_id_to_acknowledge - The class of event being sent
+ * from pldm msg
+ *  @return pldm_completion_codes
+ */
+int decode_poll_for_platform_event_message_req(
+    const struct pldm_msg *msg, size_t payload_length, uint8_t *format_version,
+    uint8_t *transfer_operation_flag, uint32_t *data_transfer_handle,
+    uint16_t *event_id_to_acknowledge);
+
 /** @brief Encode PlatformEventMessage response data
  *  @param[in] instance_id - Message's instance id
  *  @param[in] completion_code - PLDM completion code
@@ -1296,6 +1404,12 @@ int encode_platform_event_message_resp(uint8_t instance_id,
 				       uint8_t completion_code,
 				       uint8_t platform_event_status,
 				       struct pldm_msg *msg);
+
+int encode_poll_for_platform_event_message_resp(
+    uint8_t instance_id, uint8_t completion_code, uint8_t tid,
+    uint16_t event_id, uint32_t next_data_transfer_handle,
+    uint8_t transfer_flag, uint8_t event_class, uint32_t event_data_size,
+    uint8_t *event_data, uint32_t checksum, struct pldm_msg *msg);
 
 /** @brief Encode PlatformEventMessage request data
  * @param[in] instance_id - Message's instance id
@@ -1315,6 +1429,48 @@ int encode_platform_event_message_req(
     uint8_t event_class, const uint8_t *event_data, size_t event_data_length,
     struct pldm_msg *msg, size_t payload_length);
 
+/** @brief Encode PollForPlatformEventMessage request data
+ * @param[in] instance_id - Message's instance id
+ * @param[in] format_version - Version of the event format
+ * @param[in] transfer_operation_flag - Tranfer operation
+ * @param[in] data_transfer_handle - The data transfer handle
+ * @param[in] event_id_to_acknowledge - the event data to acknowleadge
+ * @param[out] msg - Request message
+ * @return pldm_completion_codes
+ * @note Caller is responsible for memory alloc and dealloc of param
+ * 'msg.payload'
+ */
+int encode_poll_for_platform_event_message_req(uint8_t instance_id,
+					       uint8_t format_version,
+					       uint8_t transfer_operation_flag,
+					       uint32_t data_transfer_handle,
+					       uint16_t event_id_to_acknowledge,
+					       struct pldm_msg *msg,
+					       size_t payload_length);
+
+/** @brief Decode PollForPlatformEventMessage response data
+ * @param[in] msg - Request message
+ * @param[in] payload_length - Length of Response message payload
+ * @param[out] completion_code - the completion code
+ * @param[out] tid - the tid
+ * @param[out] event_id - The event id
+ * @param[out] next_data_transfer_handle - The next data transfer handle
+ * @param[out] transfer_flag - The transfer flag
+ * @param[out] event_class - The event class
+ * @param[out] event_data_size - The event data size
+ * @param[out] event_data - The event data
+ * @param[out] event_data_integrity_checksum - The checksum
+ * command
+ * @return pldm_completion_codes
+ * @note Caller is responsible for memory alloc and dealloc of param
+ * 'msg.payload'
+ */
+int decode_poll_for_platform_event_message_resp(
+    const struct pldm_msg *msg, size_t payload_length, uint8_t *completion_code,
+    uint8_t *tid, uint16_t *event_id, uint32_t *next_data_transfer_handle,
+    uint8_t *transfer_flag, uint8_t *event_class, uint32_t *event_data_size,
+    uint8_t *event_data, uint32_t *event_data_integrity_checksum);
+
 /** @brief Decode PlatformEventMessage response data
  * @param[in] msg - Request message
  * @param[in] payload_length - Length of Response message payload
@@ -1327,6 +1483,58 @@ int decode_platform_event_message_resp(const struct pldm_msg *msg,
 				       size_t payload_length,
 				       uint8_t *completion_code,
 				       uint8_t *platform_event_status);
+
+/** @brief Encode EventMessageSupported request data
+ * @param[in] instance_id - Message's instance id
+ * @param[in] format_version - Version of the event format
+ * @param[out] msg - Request message
+ * @return pldm_completion_codes
+ * @note Caller is responsible for memory alloc and dealloc of param
+ * 'msg.payload'
+ */
+int encode_event_message_supported_req(uint8_t instance_id,
+				       uint8_t format_version,
+				       struct pldm_msg *msg);
+
+/** @brief Decode EventMessageSupported response data
+ * @param[in] msg - Request message
+ * @param[in] payload_length - Length of Response message payload
+ * @param[out] completion_code - PLDM completion code
+ * @param[out] synchrony_config - the synchrony configuration
+ * @param[out] synchrony_config_support - the synchrony configuration support
+ * @param[out] number_event_class_returned - PLDM completion code
+ * @param[out] event_class - the event classes
+ * @param[in] event_class_count - the event class count
+ * @return pldm_completion_codes
+ */
+int decode_event_message_supported_resp(
+    const struct pldm_msg *msg, size_t payload_length, uint8_t *completion_code,
+    uint8_t *synchrony_config, bitfield8_t *synchrony_config_support,
+    uint8_t *number_event_class_returned, uint8_t *event_class,
+    uint8_t event_class_count);
+
+/** @brief Decode EventMessageBufferSize response data
+ * @param[in] msg - Request message
+ * @param[in] payload_length - Length of Response message payload
+ * @param[out] completion_code - PLDM completion code
+ * @return pldm_completion_codes
+ */
+int decode_event_message_buffer_size_resp(const struct pldm_msg *msg,
+					  size_t payload_length,
+					  uint8_t *completion_code,
+					  uint16_t *terminus_max_buffer_size);
+
+/** @brief Encode EventMessageBufferSize request data
+ * @param[in] instance_id - Message's instance id
+ * @param[in] event_receiver_max_buffer_size - Max buffer size
+ * @param[out] msg - Request message
+ * @return pldm_completion_codes
+ * @note Caller is responsible for memory alloc and dealloc of param
+ * 'msg.payload'
+ */
+int encode_event_message_buffer_size_req(
+    uint8_t instance_id, uint16_t event_receiver_max_buffer_size,
+    struct pldm_msg *msg);
 
 /** @brief Decode sensorEventData response data
  *
@@ -1457,6 +1665,12 @@ int decode_pldm_pdr_repository_chg_event_data(
     const uint8_t *event_data, size_t event_data_size,
     uint8_t *event_data_format, uint8_t *number_of_change_records,
     size_t *change_record_data_offset);
+
+int decode_pldm_message_poll_event_data(const uint8_t *event_data,
+					size_t event_data_size,
+					uint8_t *format_version,
+					uint16_t *event_id,
+					uint32_t *data_transfer_handle);
 
 /** @brief Encode PLDM PDR Repository Change eventData
  *  @param[in] event_data_format - Format of this event data (e.g.

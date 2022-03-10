@@ -132,12 +132,15 @@ class FRUTablePrint
                         fruFieldValue =
                             fruFieldParserTimestamp(tlv->value, tlv->length);
                     }
+                    else
+                    {
+                        fruFieldValue =
+                            fruFieldValuestring(tlv->value, tlv->length);
+                    }
 
                     frudata["FRU Field Type"] =
                         typeToString(FruFieldTypeMap, tlv->type);
                     frudata["FRU Field Length"] = (int)(tlv->length);
-                    fruFieldValue =
-                        fruFieldValuestring(tlv->value, tlv->length);
                     frudata["FRU Field Value"] = fruFieldValue;
                     frufielddata.emplace_back(frudata);
                 }

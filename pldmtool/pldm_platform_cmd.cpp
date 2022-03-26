@@ -82,7 +82,8 @@ class GetPDR : public CommandInterface
                                    "supported types:\n"
                                    "[terminusLocator, stateSensor, "
                                    "numericEffecter, stateEffecter, "
-                                   "compactNumericSensor, "
+                                   "compactNumericSensor, stateSensorAuxName, "
+                                   "efffecterAuxName, "
                                    "EntityAssociation, fruRecord, ... ]");
         allPDRs = false;
         pdrOptionGroup->add_flag("-a, --all", allPDRs,
@@ -521,7 +522,9 @@ class GetPDR : public CommandInterface
     const std::map<std::string, uint8_t> strToPdrType = {
         {"terminuslocator", PLDM_TERMINUS_LOCATOR_PDR},
         {"statesensor", PLDM_STATE_SENSOR_PDR},
+        {"statesensorauxname", PLDM_SENSOR_AUXILIARY_NAMES_PDR},
         {"numericeffecter", PLDM_NUMERIC_EFFECTER_PDR},
+        {"efffecterauxname", PLDM_EFFECTER_AUXILIARY_NAMES_PDR},
         {"compactnumericsensor", PLDM_COMPACT_NUMERIC_SENSOR_PDR},
         {"stateeffecter", PLDM_STATE_EFFECTER_PDR},
         {"entityassociation", PLDM_PDR_ENTITY_ASSOCIATION},
@@ -794,6 +797,80 @@ class GetPDR : public CommandInterface
         }
     }
 
+    void printAuxNamePDR(uint8_t* data, ordered_json& output)
+    {
+        struct pldm_aux_name_value_pdr* pdr =
+            (struct pldm_aux_name_value_pdr*)data;
+        if (!pdr)
+        {
+            std::cerr << "Failed to get sensor Aux Name PDR" << std::endl;
+            return;
+        }
+        output["terminusHandle"] = int(pdr->terminus_handle);
+        output["sensorId"] = int(pdr->effecter_id);
+        output["sensorCount"] = int(pdr->sensor_count);
+        int auxNameSize = pdr->hdr.length - sizeof(pdr->effecter_id) -
+                          sizeof(pdr->terminus_handle) -
+                          sizeof(pdr->sensor_count);
+        int cnt = 0;
+        for (int j = 0; j < pdr->sensor_count; j++)
+        {
+            int name_count = pdr->aux_name_datas[cnt];
+            cnt++;
+            std::vector<std::string> languageTags;
+            std::vector<std::string> names;
+            for (int i = 0; i < name_count; i++)
+            {
+                // find languageTag
+                int start = cnt;
+                while (cnt < auxNameSize)
+                {
+                    if (pdr->aux_name_datas[cnt] == 0)
+                    {
+                        std::string lang = "";
+                        for (int t = start; t < cnt; t++)
+                        {
+                            lang.push_back((char)pdr->aux_name_datas[t]);
+                        }
+                        languageTags.push_back(lang);
+                        cnt++;
+                        break;
+                    }
+                    cnt++;
+                }
+                // find name
+                start = cnt;
+                while (cnt < auxNameSize)
+                {
+                    if (((pdr->aux_name_datas[cnt] << 8) +
+                         pdr->aux_name_datas[cnt + 1]) == 0)
+                    {
+                        std::string name = "";
+                        for (int t = start; t < cnt; t += 2)
+                        {
+                            name.push_back((char)pdr->aux_name_datas[t]);
+                        }
+                        names.push_back(name);
+                        cnt += 2;
+                        break;
+                    }
+                    cnt += 2;
+                };
+            }
+            for (int i = 0; i < name_count; i++)
+            {
+                std::string nameLanguageTag = "sensor" + std::to_string(j) +
+                                              "_nameLanguageTag" +
+                                              std::to_string(i);
+                std::string entityAuxName = "sensor" + std::to_string(j) +
+                                            "_entityAuxName" +
+                                            std::to_string(i);
+                output[nameLanguageTag] = languageTags[i];
+                output[entityAuxName] = names[i];
+            }
+        }
+    }
+
     void printNumericEffecterPDR(uint8_t* data, ordered_json& output)
     {
         struct pldm_numeric_effecter_value_pdr* pdr =
@@ -1002,6 +1079,7 @@ class GetPDR : public CommandInterface
         }
         output["PLDMTerminusHandle"] = int(pdr->terminus_handle);
         output["sensorID"] = int(pdr->sensor_id);
+        std::cerr << " parsing sensor ID: " << pdr->sensor_id << std::endl;
         output["sensorType"] = int(pdr->entity_type);
         output["entityInstanceNumber"] = int(pdr->entity_instance);
         output["containerID"] = int(pdr->container_id);
@@ -1102,6 +1180,12 @@ class GetPDR : public CommandInterface
                 break;
             case PLDM_NUMERIC_EFFECTER_PDR:
                 printNumericEffecterPDR(data, output);
+                break;
+            case PLDM_SENSOR_AUXILIARY_NAMES_PDR:
+                printAuxNamePDR(data, output);
+                break;
+            case PLDM_EFFECTER_AUXILIARY_NAMES_PDR:
+                printAuxNamePDR(data, output);
                 break;
             case PLDM_STATE_EFFECTER_PDR:
                 printStateEffecterPDR(data, output);

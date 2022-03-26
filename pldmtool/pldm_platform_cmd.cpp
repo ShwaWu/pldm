@@ -79,7 +79,8 @@ class GetPDR : public CommandInterface
                                    "supported types:\n"
                                    "[terminusLocator, stateSensor, "
                                    "numericEffecter, stateEffecter, "
-                                   "compactNumericSensor, "
+                                   "compactNumericSensor, stateSensorAuxName, "
+                                   "efffecterAuxName, "
                                    "EntityAssociation, fruRecord, ... ]");
 
         getPDRGroupOption = pdrOptionGroup->add_option(
@@ -584,7 +585,9 @@ class GetPDR : public CommandInterface
     const std::map<std::string, uint8_t> strToPdrType = {
         {"terminuslocator", PLDM_TERMINUS_LOCATOR_PDR},
         {"statesensor", PLDM_STATE_SENSOR_PDR},
+        {"statesensorauxname", PLDM_SENSOR_AUXILIARY_NAMES_PDR},
         {"numericeffecter", PLDM_NUMERIC_EFFECTER_PDR},
+        {"efffecterauxname", PLDM_EFFECTER_AUXILIARY_NAMES_PDR},
         {"compactnumericsensor", PLDM_COMPACT_NUMERIC_SENSOR_PDR},
         {"stateeffecter", PLDM_STATE_EFFECTER_PDR},
         {"entityassociation", PLDM_PDR_ENTITY_ASSOCIATION},
@@ -854,6 +857,88 @@ class GetPDR : public CommandInterface
                            unsigned(child->entity_container_id));
 
             ++child;
+        }
+    }
+
+    size_t getEffecterNameLanguageTag(const uint8_t* ptr,
+        std::string *languageTag)
+    {
+        std::string lang = "";
+        while (*ptr != 0)
+        {
+            lang.push_back(*ptr);
+            ptr++;
+        }
+        *languageTag = lang;
+
+        return lang.length() + 1;
+    }
+
+    size_t getEffterStringName(const uint8_t* ptr,
+        std::string *name)
+    {
+        std::string nameStr = "";
+        uint8_t lsb = *ptr;
+        ptr ++;
+        uint8_t msb = *ptr;
+        while (((msb << 8) + lsb) != 0)
+        {
+            nameStr.push_back((msb << 8) + lsb);
+            ptr ++;
+            lsb = *ptr;
+            ptr ++;
+            msb = *ptr;
+        }
+        *name = nameStr;
+
+        return 2*(nameStr.length() + 1);
+    }
+
+    void printEffecterAuxNamePDR(uint8_t* data, ordered_json& output)
+    {
+        auto p = data;
+        auto pdr = reinterpret_cast<const pldm_effecter_aux_name_pdr*>(data);
+        if (!pdr)
+        {
+            std::cerr << "Failed to get effecter Aux Name PDR" << std::endl;
+            return;
+        }
+        output["terminusHandle"] = int(pdr->terminus_handle);
+        output["sensorId"] = int(pdr->effecter_id);
+        output["sensorCount"] = int(pdr->effecter_count);
+
+        p += sizeof(pldm_effecter_aux_name_pdr) - sizeof(pldm_effecter_name);
+        for (int j = 0; j < pdr->effecter_count; j++)
+        {
+            std::vector<std::string> languageTags;
+            std::vector<std::string> names;
+
+            auto effecterName = reinterpret_cast<const pldm_effecter_name*>(p);
+            int name_count = effecterName->name_string_count;
+            p += sizeof(effecterName->name_string_count);
+            for (int i = 0; i < effecterName->name_string_count; i++)
+            {
+                std::string languageTag = "";
+                std::string name = "";
+                auto languageTagSize = getEffecterNameLanguageTag(p, &languageTag);
+                p += languageTagSize;
+
+                auto nameSize = getEffterStringName(p, &name);
+                p += nameSize;
+                languageTags.push_back(languageTag);
+                names.push_back(name);
+            }
+            for (int i = 0; i < name_count; i++)
+            {
+                std::string nameLanguageTag = "sensor" + std::to_string(j) +
+                                              "_nameLanguageTag" +
+                                              std::to_string(i);
+                std::string entityAuxName = "sensor" + std::to_string(j) +
+                                            "_entityAuxName" +
+                                            std::to_string(i);
+                output[nameLanguageTag] = languageTags[i];
+                output[entityAuxName] = names[i];
+            }
         }
     }
 
@@ -1144,6 +1229,7 @@ class GetPDR : public CommandInterface
         }
         output["PLDMTerminusHandle"] = int(pdr->terminus_handle);
         output["sensorID"] = int(pdr->sensor_id);
+        std::cerr << " parsing sensor ID: " << pdr->sensor_id << std::endl;
         output["sensorType"] = int(pdr->entity_type);
         output["entityInstanceNumber"] = int(pdr->entity_instance);
         output["containerID"] = int(pdr->container_id);
@@ -1254,6 +1340,9 @@ class GetPDR : public CommandInterface
                 break;
             case PLDM_NUMERIC_EFFECTER_PDR:
                 printNumericEffecterPDR(data, output);
+                break;
+            case PLDM_EFFECTER_AUXILIARY_NAMES_PDR:
+                printEffecterAuxNamePDR(data, output);
                 break;
             case PLDM_STATE_EFFECTER_PDR:
                 printStateEffecterPDR(data, output);

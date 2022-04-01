@@ -1482,6 +1482,196 @@ class GetStateSensorReadings : public CommandInterface
     uint8_t sensorRearm;
 };
 
+class PollForPlatformEventMessage : public CommandInterface
+{
+  public:
+    ~PollForPlatformEventMessage() = default;
+    PollForPlatformEventMessage() = delete;
+    PollForPlatformEventMessage(const PollForPlatformEventMessage&) = delete;
+    PollForPlatformEventMessage(PollForPlatformEventMessage&&) = default;
+    PollForPlatformEventMessage&
+        operator=(const PollForPlatformEventMessage&) = delete;
+    PollForPlatformEventMessage&
+        operator=(PollForPlatformEventMessage&&) = default;
+
+    explicit PollForPlatformEventMessage(const char* type, const char* name,
+                                         CLI::App* app) :
+        CommandInterface(type, name, app)
+    {
+        app->add_option("-i,--id", nextEventIdToAck, "input event id");
+    }
+
+    void exec() override
+    {
+        do
+        {
+            CommandInterface::exec();
+            if (nextTransferFlag == 0x05)
+            {
+                break;
+            }
+        } while (nextTransferFlag != 0x04);
+    }
+
+    std::pair<int, std::vector<uint8_t>> createRequestMsg() override
+    {
+        std::vector<uint8_t> requestMsg(
+            sizeof(pldm_msg_hdr) +
+            PLDM_POLL_FOR_PLATFORM_EVENT_MESSAGE_REQ_BYTES);
+        auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
+
+        uint8_t operationFlag = nextOperationFlag;
+        uint32_t dataTransferHandle = nextDataTransferHandle;
+        uint16_t eventIdToAck = nextEventIdToAck;
+
+        auto rc = encode_poll_for_platform_event_message_req(
+            instanceId, 1, operationFlag, dataTransferHandle, eventIdToAck,
+            request, PLDM_POLL_FOR_PLATFORM_EVENT_MESSAGE_REQ_BYTES);
+
+        return {rc, requestMsg};
+    }
+
+    void parseResponseMsg(pldm_msg* responsePtr, size_t payloadLength) override
+    {
+        uint8_t retCompletionCode;
+        uint8_t retTid = 0;
+        uint16_t retEventId = 0;
+        uint32_t retNextDataTransferHandle = 0;
+        uint8_t retTransferFlag = 0;
+        uint8_t retEventClass = 0;
+        uint32_t retEventDataSize = 0;
+        uint32_t retEventDataIntegrityChecksum = 0;
+        std::vector<uint8_t> tmp(payloadLength, 0);
+
+        auto rc = decode_poll_for_platform_event_message_resp(
+            responsePtr, payloadLength, &retCompletionCode, &retTid,
+            &retEventId, &retNextDataTransferHandle, &retTransferFlag,
+            &retEventClass, &retEventDataSize, tmp.data(),
+            &retEventDataIntegrityChecksum);
+
+        if (rc != PLDM_SUCCESS || retCompletionCode != PLDM_SUCCESS)
+        {
+            std::cerr << "Response Message Error: "
+                      << "rc=" << rc << ", cc=" << (int)retCompletionCode
+                      << "\n";
+            return;
+        }
+
+        std::vector<uint8_t> retEventData(retEventDataSize, 0);
+        memcpy(retEventData.data(), tmp.data(), retEventDataSize);
+
+        nextDataTransferHandle = retNextDataTransferHandle;
+        nextTransferFlag = retTransferFlag;
+        nextEventIdToAck = retEventId;
+
+        nextData.insert(nextData.end(), retEventData.begin(),
+                        retEventData.end());
+
+        if (nextDataTransferHandle != 0)
+        {
+            // get next part
+            nextOperationFlag = PLDM_GET_NEXTPART;
+        }
+
+        if (nextTransferFlag == 0x4 || nextTransferFlag == 0x5)
+        {
+            nextOperationFlag = PLDM_ACKNOWLEDGEMENT_ONLY;
+
+            ordered_json data;
+            data["Response"] = "SUCCESS";
+
+            data.emplace("EventClass", retEventClass);
+            data.emplace("EventID", retEventId);
+
+            std::stringstream s;
+            for (size_t i = 0; i < nextData.size(); i++)
+            {
+                s << std::to_string(nextData[i]) << " ";
+            }
+            data.emplace("EventData", s.str());
+
+            pldmtool::helper::DisplayInJson(data);
+        }
+    }
+
+  private:
+    uint32_t nextDataTransferHandle = 0;
+    uint8_t nextTransferFlag = 0;
+    uint8_t nextOperationFlag = PLDM_GET_FIRSTPART;
+    uint16_t nextEventIdToAck = 0;
+    std::vector<uint8_t> nextData;
+};
+
+class PlatformEventMessage : public CommandInterface
+{
+  public:
+    ~PlatformEventMessage() = default;
+    PlatformEventMessage() = delete;
+    PlatformEventMessage(const PlatformEventMessage&) = delete;
+    PlatformEventMessage(PlatformEventMessage&&) = default;
+    PlatformEventMessage& operator=(const PlatformEventMessage&) = delete;
+    PlatformEventMessage& operator=(PlatformEventMessage&&) = default;
+
+    explicit PlatformEventMessage(const char* type, const char* name,
+                                  CLI::App* app) :
+        CommandInterface(type, name, app)
+    {
+        app->add_option("-c,--class", eventClass, "input event class");
+    }
+
+    std::pair<int, std::vector<uint8_t>> createRequestMsg() override
+    {
+        std::vector<uint8_t> eventDataVec(
+            sizeof(struct pldm_msg_poll_event_data) - 1, 0);
+        auto data =
+            reinterpret_cast<pldm_msg_poll_event_data*>(eventDataVec.data());
+
+        data->format_version = 0x1;
+        data->event_id = 0x65;
+        data->data_transfer_handle = 0x0;
+
+        std::vector<uint8_t> requestMsg(
+            sizeof(pldm_msg_hdr) + PLDM_PLATFORM_EVENT_MESSAGE_MIN_REQ_BYTES +
+            7);
+        auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
+
+        auto rc = encode_platform_event_message_req(
+            instanceId, 1 /*formatVersion*/, 0 /*tId*/, eventClass,
+            eventDataVec.data(), eventDataVec.size(), request,
+            eventDataVec.size() + PLDM_PLATFORM_EVENT_MESSAGE_MIN_REQ_BYTES);
+        if (rc != PLDM_SUCCESS)
+        {
+            std::cerr << "Failed to encode_platform_event_message_req, rc = "
+                      << rc << std::endl;
+        }
+
+        return {rc, requestMsg};
+    }
+
+    void parseResponseMsg(pldm_msg* responsePtr, size_t payloadLength) override
+    {
+        uint8_t completionCode{};
+        uint8_t status{};
+        auto rc = decode_platform_event_message_resp(responsePtr, payloadLength,
+                                                     &completionCode, &status);
+        if (rc || completionCode)
+        {
+            std::cerr << "Failed to decode_platform_event_message_resp: "
+                      << "rc=" << rc
+                      << ", cc=" << static_cast<unsigned>(completionCode)
+                      << std::endl;
+        }
+
+        ordered_json data;
+        data["completionCode"] = completionCode;
+        data.emplace("status", status);
+        pldmtool::helper::DisplayInJson(data);
+    }
+
+  private:
+    uint8_t eventClass = 5;
+};
+
 void registerCommand(CLI::App& app)
 {
     auto platform = app.add_subcommand("platform", "platform type command");
@@ -1490,6 +1680,17 @@ void registerCommand(CLI::App& app)
     auto getPDR =
         platform->add_subcommand("GetPDR", "get platform descriptor records");
     commands.push_back(std::make_unique<GetPDR>("platform", "getPDR", getPDR));
+
+    auto platformEventMessage = platform->add_subcommand(
+        "PlatformEventMessage", "Platform event message");
+    commands.push_back(std::make_unique<PlatformEventMessage>(
+        "platform", "platformEventMessage", platformEventMessage));
+
+    auto pollForPlatformEventMessage = platform->add_subcommand(
+        "PollForPlatformEventMessage", "poll for platform event message");
+    commands.push_back(std::make_unique<PollForPlatformEventMessage>(
+        "platform", "pollForPlatformEventMessage",
+        pollForPlatformEventMessage));
 
     auto setStateEffecterStates = platform->add_subcommand(
         "SetStateEffecterStates", "set effecter states");

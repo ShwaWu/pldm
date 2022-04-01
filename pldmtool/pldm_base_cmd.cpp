@@ -54,7 +54,8 @@ const std::map<const char*, pldm_platform_commands> pldmPlatformCmds{
     {"SetEventReceiver", PLDM_SET_EVENT_RECEIVER},
     {"GetSensorReading", PLDM_GET_SENSOR_READING},
     {"GetStateSensorReadings", PLDM_GET_STATE_SENSOR_READINGS},
-    {"PlatformEventMessage", PLDM_PLATFORM_EVENT_MESSAGE}};
+    {"PlatformEventMessage", PLDM_PLATFORM_EVENT_MESSAGE},
+    {"PollForPlatformEventMessage", PLDM_POLL_FOR_EVENT_MESSAGE}};
 
 const std::map<const char*, pldm_fru_commands> pldmFruCmds{
     {"GetFRURecordTableMetadata", PLDM_GET_FRU_RECORD_TABLE_METADATA},

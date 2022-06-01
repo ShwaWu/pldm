@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fw-update/manager.hpp"
+#include "requester/terminus_manager.hpp"
 
 #include <sdbusplus/bus/match.hpp>
 
@@ -24,7 +25,8 @@ class MctpDiscovery
      *  @param[in] fwManager - pointer to the firmware manager
      */
     explicit MctpDiscovery(sdbusplus::bus::bus& bus,
-                           fw_update::Manager* fwManager);
+                           fw_update::Manager* fwManager,
+                           terminus::Manager* devManager);
 
   private:
     /** @brief reference to the systemd bus */
@@ -32,15 +34,25 @@ class MctpDiscovery
 
     fw_update::Manager* fwManager;
 
-    /** @brief Used to watch for new MCTP endpoints */
-    sdbusplus::bus::match_t mctpEndpointSignal;
+    terminus::Manager* devManager;
 
-    void dicoverEndpoints(sdbusplus::message::message& msg);
+    /** @brief Used to watch for new MCTP endpoints */
+    sdbusplus::bus::match_t mctpEndpointAddedSignal;
+
+    /** @brief Used to watch for the removed MCTP endpoints */
+    sdbusplus::bus::match_t mctpEndpointRemovedSignal;
+
+    void discoverEndpoints(sdbusplus::message::message& msg);
+
+    void removeEndpoints(sdbusplus::message::message& msg);
 
     static constexpr uint8_t mctpTypePLDM = 1;
 
     static constexpr std::string_view mctpEndpointIntfName{
         "xyz.openbmc_project.MCTP.Endpoint"};
+
+    /* List MCTP endpoint in MCTP D-Bus interface or Static EID table */
+    std::vector<mctp_eid_t> listEids;
 };
 
 } // namespace pldm

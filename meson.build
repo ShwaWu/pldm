@@ -60,6 +60,7 @@ if get_option('libpldm-only').disabled()
   conf_data.set_quoted('HOST_EID_PATH', join_paths(package_datadir, 'host_eid'))
 endif
 conf_data.set('MAXIMUM_TRANSFER_SIZE', get_option('maximum-transfer-size'))
+conf_data.set_quoted('EID_TO_NAME_JSON', join_paths(package_datadir, 'eid_to_name.json'))
 configure_file(output: 'config.h',
   configuration: conf_data
 )

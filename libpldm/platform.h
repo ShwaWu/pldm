@@ -148,6 +148,7 @@ enum pldm_pdr_types {
 	PLDM_INTERRUPT_ASSOCIATION_PDR = 18,
 	PLDM_EVENT_LOG_PDR = 19,
 	PLDM_PDR_FRU_RECORD_SET = 20,
+	PLDM_COMPACT_NUMERIC_SENSOR_PDR = 21,
 	PLDM_OEM_DEVICE_PDR = 126,
 	PLDM_OEM_PDR = 127,
 };
@@ -398,6 +399,31 @@ struct pldm_state_effecter_pdr {
 	bool8_t has_description_pdr;
 	uint8_t composite_effecter_count;
 	uint8_t possible_states[1];
+} __attribute__((packed));
+
+/** @struct pldm_compact_nummeric_sensor_pdr
+ *
+ *  Structure representing PLDM compact nummeric sensor PDR
+ */
+struct pldm_compact_nummeric_sensor_pdr {
+	struct pldm_pdr_hdr hdr;
+	uint16_t terminus_handle;
+	uint16_t sensor_id;
+	uint16_t entity_type;
+	uint16_t entity_instance;
+	uint16_t container_id;
+	uint8_t sensor_name_length;
+	uint8_t base_unit;
+	int8_t unit_modifier;
+	uint8_t occurrence_rate;
+	bitfield8_t range_field_support;
+	int32_t warning_high;
+	int32_t warning_low;
+	int32_t critical_high;
+	int32_t critical_low;
+	int32_t fatal_high;
+	int32_t fatal_low;
+	uint8_t sensor_name[1];
 } __attribute__((packed));
 
 /** @brief Encode PLDM state sensor PDR

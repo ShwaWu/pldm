@@ -56,6 +56,8 @@ conf_data.set('NUMBER_OF_REQUEST_RETRIES', get_option('number-of-request-retries
 conf_data.set('INSTANCE_ID_EXPIRATION_INTERVAL',get_option('instance-id-expiration-interval'))
 conf_data.set('RESPONSE_TIME_OUT',get_option('response-time-out'))
 conf_data.set('FLIGHT_RECORDER_MAX_ENTRIES',get_option('flightrecorder-max-entries'))
+conf_data.set('SLEEP_BETWEEN_GET_SENSOR_READING', get_option('sleep-between-get-sensor-reading'))
+conf_data.set('POLL_SENSOR_TIMER_INTERVAL', get_option('poll-sensor-timer-interval'))
 if get_option('libpldm-only').disabled()
   conf_data.set_quoted('HOST_EID_PATH', join_paths(package_datadir, 'host_eid'))
 endif

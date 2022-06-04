@@ -35,6 +35,7 @@ TerminusHandler::~TerminusHandler()
     this->effecterPDRs.clear();
     this->_state.clear();
     this->_sensorObjects.clear();
+    this->_effecterLists.clear();
 }
 
 requester::Coroutine TerminusHandler::discoveryTerminus()
@@ -163,6 +164,14 @@ requester::Coroutine TerminusHandler::discoveryTerminus()
             if (this->compNumSensorPDRs.size() > 0)
             {
                 this->createCompactNummericSensorIntf(this->compNumSensorPDRs);
+            }
+            if (this->effecterAuxNamePDRs.size() > 0)
+            {
+                this->parseAuxNamePDRs(this->effecterAuxNamePDRs);
+            }
+            if (this->effecterPDRs.size() > 0)
+            {
+                this->createNummericEffecterDBusIntf(this->effecterPDRs);
             }
             if (_state.size() > 0)
             {
@@ -1279,6 +1288,224 @@ void TerminusHandler::createCompactNummericSensorIntf(const PDRList& sensorPDRs)
         }
     }
 
+    return;
+}
+
+void TerminusHandler::createNummericEffecterDBusIntf(const PDRList& sensorPDRs)
+{
+    std::vector<auxNameKey> _addedEffecter;
+    for (const auto& sensorPDR : sensorPDRs)
+    {
+        auto pdr = reinterpret_cast<const pldm_numeric_effecter_value_pdr*>(
+            sensorPDR.data());
+        auxNameKey namekey =
+            std::make_tuple(pdr->terminus_handle, pdr->effecter_id);
+
+        auto it =
+            std::find(_addedEffecter.begin(), _addedEffecter.end(), namekey);
+        if (it != _addedEffecter.end())
+        {
+            std::cerr << "Effecter " << pdr->effecter_id << " existed."
+                      << std::endl;
+            continue;
+        }
+        _addedEffecter.emplace_back(namekey);
+
+        PldmSensorInfo sensorInfo{};
+        auto terminusHandle = pdr->terminus_handle;
+        sensorInfo.entityType = pdr->entity_type;
+        sensorInfo.entityInstance = pdr->entity_instance;
+        sensorInfo.containerId = pdr->container_id;
+
+        std::string sTemp = "";
+        if (_auxNameMaps.find(namekey) != _auxNameMaps.end())
+        {
+            try
+            {
+                /* Use first name of first sensor idx for effecter name */
+                sTemp = get<1>(_auxNameMaps[namekey][0][0]);
+            }
+            catch (const std::exception& e)
+            {
+                std::cerr << "Failed to get name of Aux Name Key : "
+                          << get<0>(namekey) << ":" << get<1>(namekey) << '\n';
+                sTemp =
+                    "Effecter_" + std::to_string(unsigned(pdr->effecter_id));
+            }
+        }
+        else
+        {
+            std::cerr << "No Aux Name of effecter : " << get<0>(namekey) << ":"
+                      << get<1>(namekey) << '\n';
+            sTemp = "Effecter_" + std::to_string(unsigned(pdr->effecter_id));
+        }
+
+        size_t pos = 0;
+        while ((pos = sTemp.find(" ")) != std::string::npos)
+        {
+            sTemp.replace(pos, 1, "_");
+        }
+        sensorInfo.sensorName = sTemp;
+        sensorInfo.sensorNameLength = sTemp.length();
+
+        sensorInfo.baseUnit = pdr->base_unit;
+        sensorInfo.unitModifier = pdr->unit_modifier;
+        sensorInfo.offset = pdr->offset;
+        sensorInfo.resolution = pdr->resolution;
+        sensorInfo.occurrenceRate = pdr->rate_unit;
+        sensorInfo.rangeFieldSupport = pdr->range_field_support;
+        sensorInfo.warningHigh = std::numeric_limits<double>::quiet_NaN();
+        sensorInfo.warningLow = std::numeric_limits<double>::quiet_NaN();
+        sensorInfo.criticalHigh = std::numeric_limits<double>::quiet_NaN();
+        sensorInfo.criticalLow = std::numeric_limits<double>::quiet_NaN();
+        sensorInfo.fatalHigh = std::numeric_limits<double>::quiet_NaN();
+        sensorInfo.fatalLow = std::numeric_limits<double>::quiet_NaN();
+        auto terminusId = PLDM_TID_RESERVED;
+        try
+        {
+            terminusId = std::get<0>(tlPDRInfo.at(terminusHandle));
+        }
+        catch (const std::out_of_range& e)
+        {
+            // Do nothing
+        }
+
+        /* There is TID mapping */
+        if (eidToName.second != "")
+        {
+            /* PREFIX */
+            if (eidToName.first == true)
+            {
+                sensorInfo.sensorName =
+                    eidToName.second + sensorInfo.sensorName;
+            }
+            else
+            {
+                sensorInfo.sensorName =
+                    sensorInfo.sensorName + eidToName.second;
+            }
+        }
+        else
+        {
+            sensorInfo.sensorName = sensorInfo.sensorName + "_TID" +
+                                    std::to_string(unsigned(terminusId));
+        }
+        std::cerr << "Adding effecter name: " << sensorInfo.sensorName
+                  << std::endl;
+
+        auto sensorObj = std::make_unique<PldmSensor>(
+            bus, sensorInfo.sensorName, sensorInfo.baseUnit,
+            sensorInfo.unitModifier, sensorInfo.offset, sensorInfo.resolution,
+            sensorInfo.warningHigh, sensorInfo.warningLow,
+            sensorInfo.criticalHigh, sensorInfo.criticalLow);
+
+        auto object = sensorObj->createSensor();
+        if (object)
+        {
+            auto value =
+                std::make_tuple(pdr->effecter_id, std::move((*object).second));
+            auto key = std::make_tuple(eid, pdr->effecter_id, pdr->hdr.type);
+
+            _sensorObjects[key] = std::move(sensorObj);
+            _effecterLists.emplace_back(key);
+            _state[std::move(key)] = std::move(value);
+        }
+    }
+
+    return;
+}
+
+size_t getEffecterNameLanguageTag(const uint8_t* ptr,
+    std::string *languageTag)
+{
+    std::string lang = "";
+    while (*ptr != 0)
+    {
+        lang.push_back(*ptr);
+        ptr++;
+    }
+    *languageTag = lang;
+
+    return lang.length() + 1;
+}
+
+size_t getEffterStringName(const uint8_t* ptr,
+    std::string *name)
+{
+    std::string nameStr = "";
+    uint8_t lsb = *ptr;
+    ptr ++;
+    uint8_t msb = *ptr;
+    while (((msb << 8) + lsb) != 0)
+    {
+        nameStr.push_back((msb << 8) + lsb);
+        ptr ++;
+        lsb = *ptr;
+        ptr ++;
+        msb = *ptr;
+    }
+    *name = nameStr;
+
+    return 2*(nameStr.length() + 1);
+}
+
+void TerminusHandler::parseAuxNamePDRs(const PDRList& sensorPDRs)
+{
+    for (const auto& sensorPDR : sensorPDRs)
+    {
+
+        auto p = sensorPDR.data();
+        auto pdr =
+            reinterpret_cast<const pldm_effecter_aux_name_pdr*>(sensorPDR.data());
+        if (!pdr)
+        {
+            std::cerr << "Failed to get Aux Name PDR" << std::endl;
+            return;
+        }
+
+        p += sizeof(pldm_effecter_aux_name_pdr) - sizeof(pldm_effecter_name);
+        auto key = std::make_tuple(pdr->terminus_handle, pdr->effecter_id);
+        auxNameSensorMapping sensorNameMapping;
+        for (int i = 0; i < pdr->effecter_count; i++)
+        {
+            auxNameList nameLists;
+            auto effecterName = reinterpret_cast<const pldm_effecter_name*>(p);
+
+            p += sizeof(effecterName->name_string_count);
+            for (int j = 0; j < effecterName->name_string_count; j++)
+            {
+                std::string languageTag = "";
+                std::string name = "";
+                auto languageTagSize = getEffecterNameLanguageTag(p, &languageTag);
+                p += languageTagSize;
+
+                auto nameSize = getEffterStringName(p, &name);
+                p += nameSize;
+
+                nameLists.emplace_back(std::make_tuple(languageTag, name));
+                std::cerr << "Add \"" << languageTag << "\":\"" << name
+                          << "\" to effecter aux name lists" << std::endl;
+            }
+            if (!nameLists.size())
+            {
+                continue;
+            }
+            sensorNameMapping.emplace_back(nameLists);
+        }
+        if (!sensorNameMapping.size())
+        {
+            std::cerr << "Failed to find Aux Name of sensor Key " << get<0>(key)
+                      << ":" << get<1>(key) << "in mapping table." << std::endl;
+            continue;
+        }
+        if (_auxNameMaps.find(key) != _auxNameMaps.end())
+        {
+            std::cerr << "Aux Name Key : " << get<0>(key) << ":" << get<1>(key)
+                      << " existed in mapping table." << std::endl;
+            continue;
+        }
+        _auxNameMaps[key] = sensorNameMapping;
+    }
     return;
 }
 

@@ -107,7 +107,7 @@ void PldmMessagePollEvent::handlePldmDbusEventSignal()
                 msg.read(msgTID, msgEventClass, msgFormatVersion, msgEventID,
                          msgEventDataTransferHandle);
 #ifdef DEBUG
-                std::cout << "\->Coming DBUS Event Signal\n"
+                std::cout << "\n->Coming DBUS Event Signal\n"
                           << "TID: " << std::hex << (unsigned)msgTID << "\n"
                           << "msgEventClass: " << std::hex
                           << (unsigned)msgEventClass << "\n"
@@ -121,7 +121,7 @@ void PldmMessagePollEvent::handlePldmDbusEventSignal()
                 {
                     // add the priority
                     priorityMap[msgEventID] = 2;
-                    this->enqueue(msgEventID);
+                    this->enqueueCriticalEvent(msgEventID);
                 }
                 catch (const std::exception& e)
                 {

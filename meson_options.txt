@@ -32,3 +32,6 @@ option('flightrecorder-max-entries', type:'integer',min:0, max:30, description: 
 
 option('sleep-between-get-sensor-reading', type: 'integer', min: 0, max: 1000, description: 'The amount of time the sensor polling timer should sleep between the sending GetSensorReading times in milliseconds', value: 10)
 option('poll-sensor-timer-interval', type: 'integer', min: 1000, max: 100000, description: 'The interval to restart the timer to poll the PLDm sensors in milliseconds', value: 1000)
+option('normal-ras-event-timer', type: 'integer', min: 2000, max: 10000, description: 'The amount of time a BMC periodcally poll normal RAS event in milliseconds', value: 5000)
+option('critical-ras-event-timer', type: 'integer', min: 25, max: 100, description: 'The amount of time a BMC periodcally poll critical RAS event in milliseconds', value: 50)
+option('poll-req-event-timer', type: 'integer', min: 25, max: 100, description: 'The amount of time a BMC send each part in multipart pollForEventMessage in milliseconds', value: 25)

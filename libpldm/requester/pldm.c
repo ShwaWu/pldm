@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <config.h>
+#include <time.h>
 
 const uint8_t MCTP_MSG_TYPE_PLDM = 1;
 
@@ -148,18 +150,28 @@ pldm_requester_rc_t pldm_send_recv(mctp_eid_t eid, int mctp_fd,
 		return PLDM_REQUESTER_NOT_REQ_MSG;
 	}
 
-	pldm_requester_rc_t rc =
-	    pldm_send(eid, mctp_fd, pldm_req_msg, req_msg_len);
-	if (rc != PLDM_REQUESTER_SUCCESS) {
-		return rc;
-	}
-
-	while (1) {
-		rc = pldm_recv(eid, mctp_fd, hdr->instance_id, pldm_resp_msg,
-			       resp_msg_len);
-		if (rc == PLDM_REQUESTER_SUCCESS) {
-			break;
+	int i = 0;
+	pldm_requester_rc_t rc;
+	time_t t;
+	int sec;
+	while (i < (NUMBER_OF_REQUEST_RETRIES + 1)) {
+		rc = pldm_send(eid, mctp_fd, pldm_req_msg, req_msg_len);
+		if (rc != PLDM_REQUESTER_SUCCESS) {
+			return rc;
 		}
+		t = time(NULL);
+		while (1) {
+			rc = pldm_recv(eid, mctp_fd, hdr->instance_id, pldm_resp_msg,
+				       resp_msg_len);
+			if (rc == PLDM_REQUESTER_SUCCESS) {
+				return rc;
+			}
+			sec = (int)(time(NULL) - t);
+			if (sec >= (RESPONSE_TIME_OUT / 1000)) {
+				break;
+			}
+		}
+		i++;
 	}
 
 	return rc;

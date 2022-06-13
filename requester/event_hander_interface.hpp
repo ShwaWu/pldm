@@ -35,56 +35,56 @@ class EventHandlerInterface
         pldm::dbus_api::Requester& requester,
         pldm::requester::Handler<pldm::requester::Request>* handler);
     virtual ~EventHandlerInterface() = default;
-    virtual void exec();
-    virtual void callback();
 
-    void registerEventHandler(uint8_t eventClass, HandlerFunc func);
-    int enqueue(uint16_t item);
+    virtual void normalEventCb();
+    virtual void criticalEventCb();
+    void registerEventHandler(uint8_t event_class, HandlerFunc func);
+    int enqueueCriticalEvent(uint16_t item);
     void startCallback();
     void stopCallback();
 
   private:
     std::size_t MAX_QUEUE_SIZE = 256;
-    uint64_t interval = 250000;
-    uint64_t timeout = 1000000;
     bool isProcessPolling = false;
+    bool isPolling = false;
+    bool isCritical = false;
     uint8_t eid;
     sdbusplus::bus::bus& bus;
     sdeventplus::Event& event;
     pldm::dbus_api::Requester& requester;
     pldm::requester::Handler<pldm::requester::Request>* handler;
-    std::chrono::microseconds usec{timeout};
-    sdeventplus::utility::Timer<sdeventplus::ClockId::Monotonic> eventTimer;
+    sdeventplus::utility::Timer<sdeventplus::ClockId::Monotonic> normEventTimer;
+    sdeventplus::utility::Timer<sdeventplus::ClockId::Monotonic> critEventTimer;
+    sdeventplus::utility::Timer<sdeventplus::ClockId::Monotonic> pollEventReqTimer;
 
-    int requestPollData();
     void processResponseMsg(mctp_eid_t eid, const pldm_msg* response,
                             size_t respMsgLen);
-
     void reset();
-    void timeoutHandler();
+    void pollReqTimeoutHdl();
+    void pollEventReqCb();
 
-    struct PollingInfo
+    struct ReqPollInfo
     {
-        uint8_t TID;
         uint8_t operationFlag;
         uint32_t dataTransferHandle;
         uint16_t eventIdToAck;
-        uint8_t transferFlag;
-        uint32_t eventDataCRC;
+    };
+    struct RecvPollInfo
+    {
         uint8_t eventClass;
         uint32_t totalSize;
-        uint8_t priority;
         std::vector<uint8_t> data;
     };
 
   protected:
+
     uint8_t instanceId;
     bool responseReceived = false;
-    std::unique_ptr<phosphor::Timer> _timer;
-    std::map<uint8_t, HandlerFunc> _eventHndls;
-    std::deque<uint16_t> _eventQueue;
-    std::unordered_map<uint16_t, std::unique_ptr<PollingInfo>> _data;
-    std::unordered_map<uint16_t, int> retries;
+    std::unique_ptr<phosphor::Timer> pollReqTimeoutTimer;
+    std::map<uint8_t, HandlerFunc> eventHndls;
+    std::deque<uint16_t> critEventQueue;
+    ReqPollInfo reqData;
+    RecvPollInfo recvData;
 };
 
 } // namespace pldm

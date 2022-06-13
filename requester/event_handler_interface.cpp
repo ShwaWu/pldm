@@ -1,7 +1,5 @@
 #include "config.h"
-
 #include "libpldm/requester/pldm.h"
-
 #include "event_hander_interface.hpp"
 
 #include <assert.h>
@@ -32,102 +30,88 @@ EventHandlerInterface::EventHandlerInterface(
     uint8_t eid, sdeventplus::Event& event, sdbusplus::bus::bus& bus,
     pldm::dbus_api::Requester& requester,
     pldm::requester::Handler<pldm::requester::Request>* handler) :
-    eid(eid),
-    bus(bus), event(event), requester(requester), handler(handler),
-    eventTimer(event, std::bind(&EventHandlerInterface::callback, this))
+    eid(eid), bus(bus), event(event), requester(requester),
+    handler(handler),
+    normEventTimer(event, std::bind(&EventHandlerInterface::normalEventCb, this)),
+    critEventTimer(event, std::bind(&EventHandlerInterface::criticalEventCb, this)),
+    pollEventReqTimer(event, std::bind(&EventHandlerInterface::pollEventReqCb, this))
 {
-    _timer = std::make_unique<phosphor::Timer>([&](void) { timeoutHandler(); });
+    pollReqTimeoutTimer = std::make_unique<phosphor::Timer>(
+                                 [&](void) { pollReqTimeoutHdl(); });
     startCallback();
 }
 
-void EventHandlerInterface::callback()
+void EventHandlerInterface::normalEventCb()
 {
-    exec();
-}
+    if (isProcessPolling || isCritical)
+        return;
 
-void EventHandlerInterface::exec()
-{
-    if (!isProcessPolling)
-    {
-        requestPollData();
-    }
-}
-/**
- *  outside uses to insert event only
- * */
-int EventHandlerInterface::enqueue(uint16_t item)
-{
-    if (_eventQueue.size() < MAX_QUEUE_SIZE)
-    {
-        for (auto& i : _eventQueue)
-        {
-            if (i == item)
-            {
-                return -2;
-            }
-        }
-
-        // prepare cache data
-        auto element = _data.find(item);
-        auto _tmp = std::make_unique<PollingInfo>();
-
-        if (element == _data.end())
-        {
-            _tmp->operationFlag = PLDM_GET_FIRSTPART;
-            _tmp->dataTransferHandle = item;
-            _tmp->eventIdToAck = item;
-            _tmp->eventClass = PLDM_MESSAGE_POLL_EVENT;
-            _tmp->transferFlag = 0x0;
-            _tmp->totalSize = 0;
-            _tmp->eventDataCRC = 0;
-
-            // save info into the map
-            _data[item] = std::move(_tmp);
+    /* Periodically poll for dummy RAS event data */
+    uint16_t eventId = 0x0;
+    /* prepare request data */
+    reqData.operationFlag = PLDM_GET_FIRSTPART;
+    reqData.dataTransferHandle = eventId;
+    reqData.eventIdToAck = eventId;
 #ifdef DEBUG
-            std::cout << "\nQUEUING NEXT EVENT_ID " << std::hex << item << "\n";
+            std::cout << "\nHandle Normal EVENT_ID " << std::hex << eventId << "\n";
 #endif
-            // insert to event queue
-            _eventQueue.push_back(item);
-        }
-
-        return 0;
-    }
-
-    return -1;
+      pollEventReqTimer.restart(std::chrono::milliseconds(POLL_REQ_EVENT_TIMER));
 }
 
-void EventHandlerInterface::timeoutHandler()
+void EventHandlerInterface::criticalEventCb()
+{
+    if (isProcessPolling)
+        return;
+    if (critEventQueue.empty())
+    {
+        isCritical = false;
+        return;
+    }
+    /* Has Critical Event */
+    isCritical = true;
+    uint16_t eventId = critEventQueue.front();
+    critEventQueue.pop_front();
+    /* prepare request data */
+    reqData.operationFlag = PLDM_GET_FIRSTPART;
+    reqData.dataTransferHandle = eventId;
+    reqData.eventIdToAck = eventId;
+#ifdef DEBUG
+            std::cout << "\nHandle Critical EVENT_ID " << std::hex << eventId << "\n";
+#endif
+      pollEventReqTimer.restart(std::chrono::milliseconds(POLL_REQ_EVENT_TIMER));
+}
+
+int EventHandlerInterface::enqueueCriticalEvent(uint16_t item)
+{
+    if (critEventQueue.size() > MAX_QUEUE_SIZE)
+        return -1;
+
+    for (auto& i : critEventQueue)
+    {
+        if (i == item)
+        {
+            return -2;
+        }
+    }
+
+#ifdef DEBUG
+    std::cout << "\nQUEUING CRIT EVENT_ID " << std::hex << item << "\n";
+#endif
+    // insert to event queue
+    critEventQueue.push_back(item);
+
+    return 0;
+}
+
+void EventHandlerInterface::pollReqTimeoutHdl()
 {
     if (!responseReceived)
     {
 #ifdef DEBUG
-        std::cerr << "TIMEOUT ...\n";
+        std::cout << "POLL REQ TIMEOUT DROP EVENT_ID \n" << std::hex
+                  << reqData.eventIdToAck << "\n";
 #endif
-        uint16_t eventIdToAck = _eventQueue.front();
-        if (retries[eventIdToAck] > MAX_ATTEMPT)
-        {
-#ifdef DEBUG
-            std::cout << "HIT MAX RETRIES, DROP EVENT_ID " << std::hex
-                      << eventIdToAck << "\n";
-#endif
-            // clear cached data
-            retries[eventIdToAck] = 0;
-            _data.extract(eventIdToAck);
-
-            if (_eventQueue.size() > 0)
-            {
-                // pop the queue
-                _eventQueue.pop_front();
-                _eventQueue.shrink_to_fit();
-            }
-        }
-        else
-        {
-            // increase retry counter
-            retries[eventIdToAck] += 1;
-        }
-
-        // resend the package
+        // clear cached data
         reset();
     }
 }
@@ -135,14 +119,20 @@ void EventHandlerInterface::timeoutHandler()
 void EventHandlerInterface::registerEventHandler(uint8_t eventClass,
                                                  HandlerFunc function)
 {
-    _eventHndls.emplace(eventClass, function);
+    eventHndls.emplace(eventClass, function);
 }
 
 void EventHandlerInterface::reset()
 {
     isProcessPolling = false;
+    isPolling = false;
+    responseReceived = false;
+    memset(&reqData, 0, sizeof(struct ReqPollInfo));
+    recvData.eventClass = 0;
+    recvData.totalSize = 0;
+    recvData.data.clear();
     requester.markFree(eid, instanceId);
-    startCallback();
+    pollEventReqTimer.setEnabled(false);
 }
 
 void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
@@ -158,7 +148,11 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
     uint32_t retEventDataSize{};
     uint32_t retEventDataIntegrityChecksum{};
 
-    auto _tmp = std::make_unique<PollingInfo>();
+    // announce that data is received
+    responseReceived = true;
+    isPolling = false;
+    pollReqTimeoutTimer->stop();
+
     std::vector<uint8_t> tmp(respMsgLen, 0);
 
     auto rc = decode_poll_for_platform_event_message_resp(
@@ -172,6 +166,7 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
             << "ERROR: Failed to decode_poll_for_platform_event_message_resp, rc = "
             << rc << std::endl;
 #endif
+        reset();
         return;
     }
 
@@ -195,124 +190,59 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
 
     if (retEventId == 0x0 || retEventId == 0xffff)
     {
-        return;
-    }
-
-    auto element = _data.find(retEventId);
-    if (element == _data.end())
-    {
-        // not found event id in store
-        _tmp->TID = retTid;
-        _tmp->operationFlag = PLDM_GET_NEXTPART;
-        _tmp->dataTransferHandle = retNextDataTransferHandle;
-        _tmp->eventIdToAck = retEventId;
-        _tmp->eventClass = retEventClass;
-        _tmp->transferFlag = retTransferFlag;
-        _tmp->totalSize = retEventDataSize;
-        _tmp->eventDataCRC = 0;
-        _tmp->data.insert(_tmp->data.begin(), tmp.begin(),
-                          tmp.begin() + retEventDataSize);
-
-        // save info into the map
-        _data[retEventId] = std::move(_tmp);
-
-        if (_eventQueue.size() < MAX_QUEUE_SIZE)
-        {
-            for (auto& i : _eventQueue)
-            {
-                if (i == retEventId)
-                {
-                    return;
-                }
-            }
-#ifdef DEBUG
-            // insert to event queue
-            std::cout << "QUEUING EVENT_ID=" << retEventId << "\n";
-#endif
-            _eventQueue.push_back(retEventId);
-        }
         reset();
         return;
     }
 
     // drop if response eventId doesn't match with request eventId
-    if (_eventQueue.front() > 0 && retEventId != _eventQueue.front())
+    if ((reqData.eventIdToAck != 0x0) && (retEventId != reqData.eventIdToAck))
     {
 #ifdef DEBUG
         std::cerr << "WARNING: RESPONSED EVENT_ID DOESN'T MATCH WITH QUEUING\n"
-                  << "retEventId=" << std::hex << retEventId
-                  << " queue=" << _eventQueue.front()
-                  << " size=" << _eventQueue.size() << "\n";
+                  << "Recv EvenID=" << std::hex << retEventId
+                  << "Req EvenID=" << std::hex << reqData.eventIdToAck
+                  << "\n";
 #endif
+        reset();
         return;
     }
 
-    // announce that correct data is received
-    responseReceived = true;
-    _timer->stop();
-
-    // reset the retry
-    retries[retEventId] = 0;
 
     // found
-    auto& entry = *element->second;
     int flag = static_cast<int>(retTransferFlag);
-    if (flag == 0x1)
+
+    if (flag == PLDM_START)            /* Start part */
     {
-        entry.dataTransferHandle = 0;
+        recvData.data.insert(recvData.data.begin(),
+                             tmp.begin(), tmp.begin() + retEventDataSize);
+        recvData.totalSize += retEventDataSize;
+        reqData.operationFlag = PLDM_GET_NEXTPART;
+        reqData.dataTransferHandle = retNextDataTransferHandle;
+        reqData.eventIdToAck = retEventId;
     }
-    entry.operationFlag = PLDM_GET_NEXTPART;
-    entry.transferFlag = retTransferFlag;
-
-    try
+    else if (flag == PLDM_MIDDLE)       /* Middle part */
     {
-        if (entry.totalSize < entry.dataTransferHandle)
-        {
-            entry.data.resize(entry.dataTransferHandle, 0);
-        }
-
-        entry.totalSize += retEventDataSize;
-        entry.data.insert(entry.data.begin() + entry.dataTransferHandle,
-                          tmp.begin(), tmp.begin() + retEventDataSize);
-
-        entry.dataTransferHandle = retNextDataTransferHandle;
-
-#ifdef DEBUG
-        std::cout << "\nEVENT_ID:" << entry.eventIdToAck
-                  << " DATA LENGTH:" << entry.totalSize << "\n ";
-        for (auto it = entry.data.begin(); it != entry.data.end(); it++)
-        {
-            std::cout << std::setfill('0') << std::setw(2) << std::hex
-                      << (unsigned)*it << " ";
-        }
-        std::cout << "\n";
-#endif
+        recvData.data.insert(recvData.data.begin() + reqData.dataTransferHandle,
+                             tmp.begin(), tmp.begin() + retEventDataSize);
+        recvData.totalSize += retEventDataSize;
+        reqData.operationFlag = PLDM_GET_NEXTPART;
+        reqData.dataTransferHandle = retNextDataTransferHandle;
+        reqData.eventIdToAck = retEventId;
     }
-    catch (const std::exception& e)
+    else if ((flag == PLDM_END) || (flag == PLDM_START_AND_END))  /* End part */
     {
-        std::cerr << "WARNING: NO FUNCTION TO PROCESS DATA!!!\n" << std::endl;
-    }
+        recvData.data.insert(recvData.data.begin() + reqData.dataTransferHandle,
+                             tmp.begin(), tmp.begin() + retEventDataSize);
+        recvData.totalSize += retEventDataSize;
 
-    if (flag == 0x4 || flag == 0x5)
-    {
-        entry.eventDataCRC = retEventDataIntegrityChecksum;
-        uint32_t checksum = crc32(entry.data.data(), entry.data.size());
-
-        if (checksum == entry.eventDataCRC)
+        uint32_t checksum = crc32(recvData.data.data(), recvData.data.size());
+        if (checksum == retEventDataIntegrityChecksum)
         {
             try
             {
                 // invoke class handler
-                _eventHndls.at(retEventClass)(entry.TID, entry.eventClass,
-                                              entry.eventIdToAck, entry.data);
-
-                // clear cache data, avoid problem.
-                retries[entry.eventIdToAck] = 0;
-                entry.operationFlag = 0x0;
-                entry.totalSize = 0x0;
-                entry.dataTransferHandle = 0x0;
-                entry.transferFlag = 0x0;
-                entry.data.clear();
+                eventHndls.at(retEventClass)(retTid, retEventClass,
+                                retEventId, recvData.data);
             }
             catch (const std::exception& e)
             {
@@ -321,84 +251,58 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
         }
         else
         {
-            std::cerr << "\nchecksum isn't correct chks=" << std::hex
-                      << checksum << " eventDataCRC=" << std::hex
+            std::cerr << "\nchecksum isn't correct chks=" << std::hex << checksum
+                      << " eventDataCRC=" << std::hex
                       << retEventDataIntegrityChecksum << "\n ";
         }
-
-        entry.operationFlag = PLDM_ACKNOWLEDGEMENT_ONLY;
+        reqData.operationFlag = PLDM_ACKNOWLEDGEMENT_ONLY;
+        reqData.dataTransferHandle = 0;
+        reqData.eventIdToAck = 0;
     }
+#ifdef DEBUG
+        std::cout << "\nEVENT_ID:" << retEventId
+                  << " DATA LENGTH:" << recvData.totalSize << "\n ";
+        for (auto it = recvData.data.begin(); it != recvData.data.end(); it++)
+        {
+            std::cout << std::setfill('0') << std::setw(2) << std::hex
+                      << (unsigned)*it << " ";
+        }
+        std::cout << "\n";
+#endif
 
-    reset();
 }
 
-int EventHandlerInterface::requestPollData()
+void EventHandlerInterface::pollEventReqCb()
 {
-    std::vector<uint8_t> requestMsg(
-        sizeof(pldm_msg_hdr) + PLDM_POLL_FOR_PLATFORM_EVENT_MESSAGE_REQ_BYTES);
-
+    std::vector<uint8_t> requestMsg(sizeof(pldm_msg_hdr) +
+                         PLDM_POLL_FOR_PLATFORM_EVENT_MESSAGE_REQ_BYTES);
     auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
 
-    if (isProcessPolling)
-    {
-        return PLDM_ERROR;
-    }
+    if (isPolling)
+        return;
 
-    uint16_t eventIdToAck = 0x0;
-    uint8_t operationFlag = PLDM_GET_FIRSTPART;
-    uint32_t dataTransferHandle = 0x0;
-
-    // get the event id from queue
-    if (_eventQueue.size() > 0)
-    {
-        eventIdToAck = _eventQueue.front();
-
-#ifdef DEBUG
-        std::cout << "\nGET EVENT_ID=" << std::hex << eventIdToAck
-                  << " FROM QUEUE\n";
-#endif
-    }
-
-    // find the data information
-    auto element = _data.find(eventIdToAck);
-    if (element != _data.end())
-    {
-        auto& entry = *element->second;
-        if (entry.eventIdToAck != 0xffff)
-        {
-            operationFlag = entry.operationFlag;
-            dataTransferHandle = entry.dataTransferHandle;
-            eventIdToAck = entry.eventIdToAck;
-        }
-    }
-
-    // if found event in queue
-    if (eventIdToAck == 0)
-    {
-        operationFlag = PLDM_GET_FIRSTPART;
-        dataTransferHandle = 0x0;
-    }
+    if (reqData.eventIdToAck == 0xffff)
+        return;
 
 #ifdef DEBUG
     std::cout << "\nREQUEST \n"
-              << "operationFlag: " << std::hex << (unsigned)operationFlag
-              << "\n"
-              << "eventIdToAck: " << std::hex << eventIdToAck << "\n"
-              << "dataTransferHandle: " << std::hex << dataTransferHandle
-              << "\n";
+              << "TransferoperationFlag: " << std::hex << (unsigned)reqData.operationFlag << "\n"
+              << "eventIdToAck: " << std::hex << reqData.eventIdToAck << "\n"
+              << "dataTransferHandle: " << std::hex << reqData.dataTransferHandle << "\n";
 #endif
 
     instanceId = requester.getInstanceId(eid);
     auto rc = encode_poll_for_platform_event_message_req(
-        instanceId, 1, operationFlag, dataTransferHandle, eventIdToAck, request,
-        PLDM_POLL_FOR_PLATFORM_EVENT_MESSAGE_REQ_BYTES);
+                    instanceId, 1, reqData.operationFlag,
+                    reqData.dataTransferHandle, reqData.eventIdToAck,
+                    request, PLDM_POLL_FOR_PLATFORM_EVENT_MESSAGE_REQ_BYTES);
 
     if (rc != PLDM_SUCCESS)
     {
         std::cerr
             << "ERROR: Failed to encode_poll_for_platform_event_message_req(1), rc = "
             << rc << std::endl;
-        return PLDM_ERROR;
+        return;
     }
 
     rc = handler->registerRequest(
@@ -410,28 +314,33 @@ int EventHandlerInterface::requestPollData()
     {
         std::cerr << "ERROR: failed to send the poll request\n";
         requester.markFree(eid, instanceId);
-        return PLDM_ERROR;
+        return;
     }
 
     // flags settings
     isProcessPolling = true;
+    isPolling = true;
     responseReceived = false;
-    _timer->start(usec);
+    pollReqTimeoutTimer->start(std::chrono::milliseconds(
+                         (NUMBER_OF_REQUEST_RETRIES + 1) * RESPONSE_TIME_OUT));
 
-    return PLDM_SUCCESS;
 }
 
 void EventHandlerInterface::startCallback()
 {
-    std::function<void()> callback(
-        std::bind(&EventHandlerInterface::callback, this));
+    std::function<void()> normalCb(
+        std::bind(&EventHandlerInterface::normalEventCb, this));
+    std::function<void()> criticalCb(
+            std::bind(&EventHandlerInterface::criticalEventCb, this));
     try
     {
-        eventTimer.restart(std::chrono::microseconds(interval));
+        normEventTimer.restart(std::chrono::milliseconds(NORMAL_RAS_EVENT_TIMER));
+        critEventTimer.restart(std::chrono::milliseconds(CRITICAL_RAS_EVENT_TIMER));
     }
     catch (const std::exception& e)
     {
-        std::cerr << "ERROR: cannot start callback" << std::endl;
+        std::cerr << "ERROR: cannot start callback for normal"
+                     " and critical event" << std::endl;
         throw;
     }
 }
@@ -440,7 +349,8 @@ void EventHandlerInterface::stopCallback()
 {
     try
     {
-        eventTimer.setEnabled(false);
+        normEventTimer.setEnabled(false);
+        critEventTimer.setEnabled(false);
     }
     catch (const std::exception& e)
     {

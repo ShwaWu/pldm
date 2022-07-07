@@ -100,6 +100,8 @@ class CommandInterface
     int pldmSendRecv(std::vector<uint8_t>& requestMsg,
                      std::vector<uint8_t>& responseMsg);
 
+    void freeInstanceId();
+
   private:
     const std::string pldmType;
     const std::string commandName;

@@ -257,7 +257,7 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
         }
         reqData.operationFlag = PLDM_ACKNOWLEDGEMENT_ONLY;
         reqData.dataTransferHandle = 0;
-        reqData.eventIdToAck = 0;
+        reqData.eventIdToAck = retEventId;
     }
 #ifdef DEBUG
         std::cout << "\nEVENT_ID:" << retEventId

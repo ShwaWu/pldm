@@ -989,7 +989,6 @@ requester::Coroutine TerminusHandler::processDevPDRs(mctp_eid_t& /*eid*/,
     uint8_t tlEid = 0;
     bool tlValid = true;
     uint32_t rh = 0;
-    uint16_t terminusHandle = 0;
     uint8_t tid = 0;
 
     uint8_t completionCode{};
@@ -1098,7 +1097,7 @@ requester::Coroutine TerminusHandler::processDevPDRs(mctp_eid_t& /*eid*/,
     }
     else
     {
-        pldm_pdr_add(repo, pdr.data(), respCount, rh, true);
+        pldm_pdr_add(repo, pdr.data(), respCount, rh, true, terminusHandle);
     }
 
     co_return PLDM_SUCCESS;
@@ -1143,7 +1142,8 @@ void TerminusHandler::mergeEntityAssociations(const std::vector<uint8_t>& pdr)
         else
         {
             pldm_entity_association_pdr_add_from_node(node, repo, &entities,
-                                                      numEntities, true);
+                                                      numEntities, true,
+                                                      terminusHandle);
         }
     }
     free(entities);

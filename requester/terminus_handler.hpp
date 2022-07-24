@@ -424,6 +424,9 @@ class TerminusHandler
     /** @brief Enable the measurement in polling sensors */
     bool debugPollSensor = true;
     std::shared_ptr<PldmMessagePollEvent> eventDataHndl;
+
+    /** @brief Terminus handle */
+    uint16_t terminusHandle = 0;
 };
 
 } // namespace terminus

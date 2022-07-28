@@ -194,20 +194,6 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
         return;
     }
 
-    // drop if response eventId doesn't match with request eventId
-    if ((reqData.eventIdToAck != 0x0) && (retEventId != reqData.eventIdToAck))
-    {
-#ifdef DEBUG
-        std::cerr << "WARNING: RESPONSED EVENT_ID DOESN'T MATCH WITH QUEUING\n"
-                  << "Recv EvenID=" << std::hex << retEventId
-                  << "Req EvenID=" << std::hex << reqData.eventIdToAck
-                  << "\n";
-#endif
-        reset();
-        return;
-    }
-
-
     // found
     int flag = static_cast<int>(retTransferFlag);
 
@@ -218,7 +204,7 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
         recvData.totalSize += retEventDataSize;
         reqData.operationFlag = PLDM_GET_NEXTPART;
         reqData.dataTransferHandle = retNextDataTransferHandle;
-        reqData.eventIdToAck = retEventId;
+        reqData.eventIdToAck = 0xffff;
     }
     else if (flag == PLDM_MIDDLE)       /* Middle part */
     {
@@ -227,7 +213,7 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
         recvData.totalSize += retEventDataSize;
         reqData.operationFlag = PLDM_GET_NEXTPART;
         reqData.dataTransferHandle = retNextDataTransferHandle;
-        reqData.eventIdToAck = retEventId;
+        reqData.eventIdToAck = 0xffff;
     }
     else if ((flag == PLDM_END) || (flag == PLDM_START_AND_END))  /* End part */
     {
@@ -235,26 +221,27 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
                              tmp.begin(), tmp.begin() + retEventDataSize);
         recvData.totalSize += retEventDataSize;
 
+        /* eventDataIntegrityChecksum field is only used for multi-part transfer.
+         * If single-part, ignore checksum.
+         */
         uint32_t checksum = crc32(recvData.data.data(), recvData.data.size());
-        if (checksum == retEventDataIntegrityChecksum)
-        {
-            try
-            {
-                // invoke class handler
-                eventHndls.at(retEventClass)(retTid, retEventClass,
-                                retEventId, recvData.data);
-            }
-            catch (const std::exception& e)
-            {
-                std::cerr << "ERROR:\n" << e.what() << std::endl;
-            }
-        }
-        else
+        if ((flag == PLDM_END) && (checksum != retEventDataIntegrityChecksum))
         {
             std::cerr << "\nchecksum isn't correct chks=" << std::hex << checksum
                       << " eventDataCRC=" << std::hex
                       << retEventDataIntegrityChecksum << "\n ";
         }
+        else
+        {
+            // invoke class handler
+            auto it = eventHndls.find(retEventClass);
+            if (it != eventHndls.end())
+            {
+                eventHndls.at(retEventClass)(retTid, retEventClass,
+                            retEventId, recvData.data);
+            }
+        }
+
         reqData.operationFlag = PLDM_ACKNOWLEDGEMENT_ONLY;
         reqData.dataTransferHandle = 0;
         reqData.eventIdToAck = retEventId;
@@ -279,9 +266,6 @@ void EventHandlerInterface::pollEventReqCb()
     auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
 
     if (isPolling)
-        return;
-
-    if (reqData.eventIdToAck == 0xffff)
         return;
 
 #ifdef DEBUG

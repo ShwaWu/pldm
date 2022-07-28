@@ -235,26 +235,27 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
                              tmp.begin(), tmp.begin() + retEventDataSize);
         recvData.totalSize += retEventDataSize;
 
+        /* eventDataIntegrityChecksum field is only used for multi-part transfer.
+         * If single-part, ignore checksum.
+         */
         uint32_t checksum = crc32(recvData.data.data(), recvData.data.size());
-        if (checksum == retEventDataIntegrityChecksum)
-        {
-            try
-            {
-                // invoke class handler
-                eventHndls.at(retEventClass)(retTid, retEventClass,
-                                retEventId, recvData.data);
-            }
-            catch (const std::exception& e)
-            {
-                std::cerr << "ERROR:\n" << e.what() << std::endl;
-            }
-        }
-        else
+        if ((flag == PLDM_END) && (checksum != retEventDataIntegrityChecksum))
         {
             std::cerr << "\nchecksum isn't correct chks=" << std::hex << checksum
                       << " eventDataCRC=" << std::hex
                       << retEventDataIntegrityChecksum << "\n ";
         }
+        else
+        {
+            // invoke class handler
+            auto it = eventHndls.find(retEventClass);
+            if (it != eventHndls.end())
+            {
+                eventHndls.at(retEventClass)(retTid, retEventClass,
+                            retEventId, recvData.data);
+            }
+        }
+
         reqData.operationFlag = PLDM_ACKNOWLEDGEMENT_ONLY;
         reqData.dataTransferHandle = 0;
         reqData.eventIdToAck = retEventId;

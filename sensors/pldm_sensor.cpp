@@ -137,11 +137,14 @@ std::optional<ObjectStateData> PldmSensor::createSensor()
     sensorPath = _root + "/" + getNamespace(attrs) + "/" + sensorName;
 
     double sensorValue = std::numeric_limits<double>::quiet_NaN();
+    double sensorMaxValue = std::numeric_limits<double>::quiet_NaN();
+    double sensorMinValue = std::numeric_limits<double>::quiet_NaN();
     ObjectInfo info(&_bus, std::move(sensorPath), InterfaceMap());
     try
     {
         statusInterface = addStatusInterface(info, true);
-        valueInterface = addValueInterface(info, sensorValue);
+        valueInterface = addValueInterface(info, sensorValue, sensorMaxValue,
+                                           sensorMinValue);
         if (!valueInterface)
         {
             return {};
@@ -165,7 +168,8 @@ std::optional<ObjectStateData> PldmSensor::createSensor()
  * @brief Add value interface for Sensor
  */
 std::shared_ptr<ValueObject>
-    PldmSensor::addValueInterface(ObjectInfo& info, SensorValueType value)
+    PldmSensor::addValueInterface(ObjectInfo& info, SensorValueType value,
+                                  SensorValueType max, SensorValueType min)
 {
     std::shared_ptr<ValueObject> iface = nullptr;
     auto& bus = *std::get<sdbusplus::bus::bus*>(info);
@@ -181,6 +185,8 @@ std::shared_ptr<ValueObject>
         iface = std::make_shared<ValueObject>(bus, objPath.c_str(),
                                               ValueObject::action::defer_emit);
         iface->value(value);
+        iface->maxValue(max);
+        iface->minValue(min);
         obj[InterfaceType::VALUE] = iface;
     }
     catch (const std::system_error& e)

@@ -69,11 +69,15 @@ class PldmSensor
      *
      * @param[in] info - Sensor object information
      * @param[in] value - Sensor value
+     * @param[in] max - Sensor max
+     * @param[in] min - Sensor min
      *
      * @return - Shared pointer to the value object
      */
     std::shared_ptr<ValueObject> addValueInterface(ObjectInfo& info,
-                                                   SensorValueType value);
+                                                   SensorValueType value,
+                                                   SensorValueType max,
+                                                   SensorValueType min);
 
     /**
      * @brief Add status interface and functional property for sensor

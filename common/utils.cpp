@@ -482,6 +482,32 @@ int emitStateSensorEventSignal(uint8_t tid, uint16_t sensorId,
     return PLDM_SUCCESS;
 }
 
+int emitNumericSensorEventSignal(uint8_t tid, uint16_t sensorId,
+                                 uint8_t eventState, uint8_t previousEventState,
+                                 uint8_t sensorDataSize,
+                                 uint32_t presentReading)
+{
+    try
+    {
+        auto& bus = DBusHandler::getBus();
+        auto msg = bus.new_signal("/xyz/openbmc_project/pldm",
+                                  "xyz.openbmc_project.PLDM.Event",
+                                  "NumericSensorEvent");
+        msg.append(tid, sensorId, eventState, previousEventState,
+                   sensorDataSize, presentReading);
+
+        msg.signal_send();
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Error emitting pldm event signal:"
+                  << "ERROR=" << e.what() << "\n";
+        return PLDM_ERROR;
+    }
+
+    return PLDM_SUCCESS;
+}
+
 int emitPldmMessagePollEventSignal(uint8_t tid, uint8_t eventClass,
                                    uint8_t eventFormatVersion, uint16_t eventID,
                                    uint32_t eventDataTransferHandle)

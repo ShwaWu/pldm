@@ -464,6 +464,25 @@ int Handler::sensorEvent(const pldm_msg* request, size_t payloadLength,
         return hostPDRHandler->handleStateSensorEvent(stateSensorEntry,
                                                       eventState);
     }
+    else if (eventClass == PLDM_NUMERIC_SENSOR_STATE)
+    {
+        uint8_t eventState{};
+        uint8_t preEventState{};
+        uint8_t sensorDataSize{};
+        uint32_t presentReading{};
+
+        rc = decode_numeric_sensor_data(eventClassData, eventClassDataSize,
+                                        &eventState, &preEventState,
+                                        &sensorDataSize, &presentReading);
+
+        if (rc != PLDM_SUCCESS)
+        {
+            return PLDM_ERROR;
+        }
+
+        emitNumericSensorEventSignal(tid, sensorId, eventState, preEventState,
+                                     sensorDataSize, presentReading);
+    }
     else
     {
         return PLDM_ERROR_INVALID_DATA;
@@ -476,7 +495,6 @@ int Handler::pldmMsgPollEvent(const pldm_msg* request, size_t payloadLength,
                               uint8_t /*formatVersion*/, uint8_t tid,
                               size_t eventDataOffset)
 {
-
     uint8_t evtFormatVersion{};
     uint16_t evtID{};
     uint32_t evtDataTransferHandle{};

@@ -9,6 +9,7 @@
 #include "libpldmresponder/pdr_utils.hpp"
 #include "oem_handler.hpp"
 #include "pldmd/handler.hpp"
+#include "requester/numeric_sensor_state.hpp"
 
 #include <libpldm/pdr.h>
 #include <libpldm/platform.h>
@@ -68,6 +69,9 @@ class Handler : public CmdHandler
             generate(*dBusIntf, pdrJsonsDir, pdrRepo);
             pdrCreated = true;
         }
+
+        numSensorhandle =
+            std::make_unique<pldm::events::sensors::NumericSensorHanler>();
 
         handlers.emplace(PLDM_GET_PDR,
                          [this](const pldm_msg* request, size_t payloadLength) {
@@ -482,6 +486,7 @@ class Handler : public CmdHandler
     std::string pdrJsonsDir;
     bool pdrCreated;
     std::unique_ptr<sdeventplus::source::Defer> deferredGetPDREvent;
+    std::unique_ptr<pldm::events::sensors::NumericSensorHanler> numSensorhandle;
 };
 
 /** @brief Function to check if a sensor falls in OEM range

@@ -132,33 +132,44 @@ void NumericSensorHanler::handleDbusEventSignalMatch()
                     // Handle DDR training fail
                     if ((0x96 == byte3) || (0x99 == byte3))
                     {
+                        // The index of failed DIMMs are 0xbyte2.byte1.byte0
+                        uint32_t failDimmIdx = (uint32_t)byte0 |
+                                               ((uint32_t)byte1 << 8) |
+                                               ((uint32_t)byte2 << 16);
                         failFlg = true;
 
                         description +=
                             (0x96 == byte3) ? "Socket 0:" : "Socket 1:";
 
-                        description +=
-                            " Training progress failed at DIMM " +
-                            std::to_string(presentReading & 0x00ffffff);
+                        description += " Training progress failed at DIMMs:";
+
+                        for (uint32_t idx = 0; idx < 24; idx++)
+                        {
+                            if (failDimmIdx & ((uint32_t)1 << idx))
+                            {
+                                description += " #" + std::to_string(idx);
+                            }
+                        }
                     }
 
                     // Handle UEFI state reports
                     if (byte3 <= 0x7f)
                     {
-                        description = "ATF BL33 (UEFI) booting status, ";
+                        description = "ATF BL33 (UEFI) booting status = 0x";
 
                         strStream
-                            << "Status Class (0x" << std::setfill('0')
-                            << std::hex << std::setw(sizeof(uint8_t) * 2)
-                            << (uint32_t)byte3 << "), Status SubClass (0x"
-                            << (uint32_t)byte2 << "), Operation Code (0x"
+                            << std::setfill('0') << std::hex
+                            << std::setw(sizeof(uint32_t) * 2) << presentReading
+                            << ", Status Class (0x"
+                            << std::setw(sizeof(uint8_t) * 2) << (uint32_t)byte3
+                            << "), Status SubClass (0x" << (uint32_t)byte2
+                            << "), Operation Code (0x"
                             << std::setw(sizeof(uint16_t) * 2)
                             << (uint32_t)((presentReading & 0xffff0000) >> 16)
                             << ")" << std::dec;
 
                         description += strStream.str();
                     }
-
                     // Log to Redfish event
                     if (!description.empty())
                     {

@@ -222,3 +222,16 @@ option(
     description: '''The amount of time a BMC send each part in multipart
                     pollForEventMessage in milliseconds'''
     )
+
+option(
+    'ampere',
+    type: 'feature',
+    description: 'Enable AMPERE PLDM'
+)
+
+option(
+    'cper-log-path',
+    type : 'string',
+    value : '/var/lib/faultlogs/cper/',
+    description : 'File system path containing CPER logs'
+)

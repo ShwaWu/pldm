@@ -14,7 +14,6 @@ project('pldm', ['c', 'cpp'],
 # project uses the same compiler, we can safely ignmore these info notes.
 add_project_arguments('-Wno-psabi', language: 'cpp')
 
-
 # Disable FORTIFY_SOURCE when compiling with no optimization
 if(get_option('optimization') == '0')
   add_project_arguments('-U_FORTIFY_SOURCE',language:['cpp','c'])
@@ -63,6 +62,8 @@ conf_data.set('POLL_SENSOR_TIMER_INTERVAL', get_option('poll-sensor-timer-interv
 conf_data.set('NORMAL_RAS_EVENT_TIMER',get_option('normal-ras-event-timer'))
 conf_data.set('CRITICAL_RAS_EVENT_TIMER',get_option('critical-ras-event-timer'))
 conf_data.set('POLL_REQ_EVENT_TIMER',get_option('poll-req-event-timer'))
+conf_data.set_quoted('FAULT_LOG_PATH', get_option('fault_log_path'),
+                      description : 'File system path containing Fault logs')
 conf_data.set('MAXIMUM_TRANSFER_SIZE', get_option('maximum-transfer-size'))
 conf_data.set_quoted('EID_TO_NAME_JSON', join_paths(package_datadir, 'eid_to_name.json'))
 config = configure_file(output: 'config.h',
@@ -185,6 +186,7 @@ executable(
   'requester/mctp_endpoint_discovery.cpp',
   'requester/pldm_message_poll_event.cpp',
   'requester/event_signal.cpp',
+  'requester/cper.cpp',
   'sensors/pldm_sensor.cpp',
   'sensors/hwmon.cpp',
   implicit_include_directories: false,

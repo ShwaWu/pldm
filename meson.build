@@ -196,6 +196,7 @@ executable(
   'requester/terminus_handler.cpp',
   'requester/mctp_endpoint_discovery.cpp',
   'requester/pldm_message_poll_event.cpp',
+  'requester/cper.cpp',
   'requester/numeric_sensor_state.cpp',
   'sensors/pldm_sensor.cpp',
   'sensors/hwmon.cpp',

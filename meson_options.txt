@@ -34,3 +34,5 @@ option('poll-sensor-timer-interval', type: 'integer', min: 1000, max: 100000, de
 option('normal-ras-event-timer', type: 'integer', min: 2000, max: 10000, description: 'The amount of time a BMC periodcally poll normal RAS event in milliseconds', value: 5000)
 option('critical-ras-event-timer', type: 'integer', min: 25, max: 100, description: 'The amount of time a BMC periodcally poll critical RAS event in milliseconds', value: 50)
 option('poll-req-event-timer', type: 'integer', min: 25, max: 100, description: 'The amount of time a BMC send each part in multipart pollForEventMessage in milliseconds', value: 25)
+
+option('fault_log_path', type : 'string', value : '/run/bmcweb/redfish/v1/Systems/system/LogServices/', description : 'File system path containing Fault logs')

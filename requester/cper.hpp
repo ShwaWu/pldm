@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <fstream>
+#include <vector>
 
 typedef struct {
     uint32_t  Data1;
@@ -392,7 +394,8 @@ typedef struct {
 /*                               Common Header                                */
 /*----------------------------------------------------------------------------*/
 
-void decodeCperRecord(FILE *cper_file, AmpereSpecData* ampSpecHdr,
-                      FILE *out);
+void decodeCperRecord(std::vector<uint8_t> &data, long pos,
+                      AmpereSpecData* ampSpecHdr,
+                      std::ofstream &out);
 
 #endif /* PLDM_COMMON_CPER_HPP_ */

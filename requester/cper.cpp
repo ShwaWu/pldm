@@ -1,7 +1,9 @@
 #include "cper.hpp"
 #include <string.h>
 #include <iostream>
-
+#include <map>
+#include <vector>
+#include <cstring>
 /*
  * Section type definitions, used in SectionType field in struct
  * cper_section_descriptor
@@ -24,6 +26,18 @@ Guid CPER_SEC_PCIE =  { 0xd995e954, 0xbbc1, 0x430f, \
 Guid CPER_AMPERE_SPECIFIC = { 0x2826cc9f, 0x448c, 0x4c2b, \
                  { 0x86, 0xb6, 0xa9, 0x53, 0x94, 0xb7, 0xef, 0x33 }};
 
+std::map<uint16_t, size_t> armProcCtxMap = {
+        {ARM_CONTEXT_TYPE_AARCH32_GPR, sizeof(ARM_V8_AARCH32_GPR)},
+        {ARM_CONTEXT_TYPE_AARCH32_EL1, sizeof(ARM_AARCH32_EL1_CONTEXT_REGISTERS)},
+        {ARM_CONTEXT_TYPE_AARCH32_EL2, sizeof(ARM_AARCH32_EL2_CONTEXT_REGISTERS)},
+        {ARM_CONTEXT_TYPE_AARCH32_SECURE, sizeof(ARM_AARCH32_SECURE_CONTEXT_REGISTERS)},
+        {ARM_CONTEXT_TYPE_AARCH64_GPR, sizeof(ARM_V8_AARCH64_GPR)},
+        {ARM_CONTEXT_TYPE_AARCH64_EL1, sizeof(ARM_AARCH64_EL1_CONTEXT_REGISTERS)},
+        {ARM_CONTEXT_TYPE_AARCH64_EL2, sizeof(ARM_AARCH64_EL2_CONTEXT_REGISTERS)},
+        {ARM_CONTEXT_TYPE_AARCH64_EL3, sizeof(ARM_AARCH64_EL3_CONTEXT_REGISTERS)},
+        {ARM_CONTEXT_TYPE_MISC, sizeof(ARM_MISC_CONTEXT_REGISTER)},
+};
+
 //Returns one if two EFI GUIDs are equal, zero otherwise.
 static inline bool guidEqual(Guid *a, Guid *b)
 {
@@ -43,127 +57,54 @@ static inline bool guidEqual(Guid *a, Guid *b)
 }
 
 static void decodeSecAmpere(void *section, uint32_t len,
-                            AmpereSpecData* ampSpecHdr, FILE *out)
+                            AmpereSpecData* ampSpecHdr,
+                            std::ofstream &out)
 {
-    AmpereSpecData *p;
-    p = (AmpereSpecData *) section;
-    memcpy(ampSpecHdr, section, sizeof(AmpereSpecData));
-    fwrite(p, sizeof(AmpereSpecData), 1, out);
-    fflush(out);
-    /* Unformat data */
-    unsigned char *next_pos  = (unsigned char *)(p+1);
-    long remain_len = len - sizeof(AmpereSpecData);
-    for (int i = 0; i < remain_len; i++) {
-        fwrite(next_pos, sizeof(unsigned char), 1, out);
-        fflush(out);
-        next_pos++;
-    }
-}
-
-static void decodeArmProcCtx(void *pos, uint16_t type, FILE *out)
-{
-    switch(type) {
-    case ARM_CONTEXT_TYPE_AARCH32_GPR:
-        fwrite(pos, sizeof(ARM_V8_AARCH32_GPR), 1, out);
-        fflush(out);
-        break;
-    case ARM_CONTEXT_TYPE_AARCH32_EL1:
-        fwrite(pos, sizeof(ARM_AARCH32_EL1_CONTEXT_REGISTERS), 1, out);
-        fflush(out);
-        break;
-    case ARM_CONTEXT_TYPE_AARCH32_EL2:
-        fwrite(pos, sizeof(ARM_AARCH32_EL2_CONTEXT_REGISTERS), 1, out);
-        fflush(out);
-        break;
-    case ARM_CONTEXT_TYPE_AARCH32_SECURE:
-        fwrite(pos, sizeof(ARM_AARCH32_SECURE_CONTEXT_REGISTERS), 1, out);
-        fflush(out);
-        break;
-    case ARM_CONTEXT_TYPE_AARCH64_GPR:
-        fwrite(pos, sizeof(ARM_V8_AARCH64_GPR), 1, out);
-        fflush(out);
-        break;
-    case ARM_CONTEXT_TYPE_AARCH64_EL1:
-        fwrite(pos, sizeof(ARM_AARCH64_EL1_CONTEXT_REGISTERS), 1, out);
-        fflush(out);
-        break;
-    case ARM_CONTEXT_TYPE_AARCH64_EL2:
-        fwrite(pos, sizeof(ARM_AARCH64_EL2_CONTEXT_REGISTERS), 1, out);
-        fflush(out);
-        break;
-    case ARM_CONTEXT_TYPE_AARCH64_EL3:
-        fwrite(pos, sizeof(ARM_AARCH64_EL3_CONTEXT_REGISTERS), 1, out);
-        fflush(out);
-        break;
-    case ARM_CONTEXT_TYPE_MISC:
-        fwrite(pos, sizeof(ARM_MISC_CONTEXT_REGISTER), 1, out);
-        fflush(out);
-        break;
-    default:
-        break;
-    }
+    std::memcpy(ampSpecHdr, section, sizeof(AmpereSpecData));
+    out.write((char*)section, len);
 }
 
 static void decodeSecArm(void *section, AmpereSpecData* ampSpecHdr,
-                         FILE *out)
+                         std::ofstream &out)
 {
     int i, len;
     CPERSecProcArm *proc;
     CPERArmErrInfo *errInfo;
     CPERArmCtxInfo *ctxInfo;
-    AmpereSpecData *ampHdr;
-    unsigned char * next_pos;
 
     proc = (CPERSecProcArm*) section;
-    fwrite(section, sizeof(CPERSecProcArm), 1, out);
-    fflush(out);
-
+    out.write((char*)section, sizeof(CPERSecProcArm));
     errInfo = (CPERArmErrInfo *)(proc + 1);
-    for (i = 0; i < proc->ErrInfoNum; i++) {
-        fwrite(errInfo, sizeof(CPERArmErrInfo), 1, out);
-        fflush(out);
-        errInfo += 1;
-    }
-    len = proc->SectionLength - (sizeof(*proc) + proc->ErrInfoNum * (sizeof(*errInfo)));
+    out.write((char*) errInfo, proc->ErrInfoNum * sizeof(CPERArmErrInfo));
+    len = proc->SectionLength - (sizeof(CPERSecProcArm) +
+          proc->ErrInfoNum * (sizeof(CPERArmErrInfo)));
     if (len < 0)
     {
         std::cerr << "section length is too small : " << proc->SectionLength
                   << "\n";
     }
 
-    ctxInfo = (CPERArmCtxInfo *)errInfo;
+    ctxInfo = (CPERArmCtxInfo *)(errInfo + proc->ErrInfoNum);
     for (i = 0; i < proc->ContextInfoNum; i++) {
-        fwrite(ctxInfo, sizeof(CPERArmCtxInfo), 1, out);
-        fflush(out);
-        decodeArmProcCtx((void*)(ctxInfo + 1), ctxInfo->RegisterContextType, out);
-        int size = sizeof(*ctxInfo) + ctxInfo->RegisterArraySize;
+        out.write((char*) ctxInfo, sizeof(CPERArmCtxInfo));
+        out.write((char*)(ctxInfo + 1), armProcCtxMap[ctxInfo->RegisterContextType]);
+        int size = sizeof(CPERArmCtxInfo) + ctxInfo->RegisterArraySize;
         len -= size;
         ctxInfo = (CPERArmCtxInfo *)((long)ctxInfo + size);
     }
 
     if (len > 0) {
         /* Get Ampere Specific header data */
-        ampHdr = (AmpereSpecData*)ctxInfo;
-        memcpy(ampSpecHdr, ampHdr, sizeof(AmpereSpecData));
-        fwrite(ampHdr, sizeof(AmpereSpecData), 1, out);
-        fflush(out);
-        /* Unformat data */
-        next_pos  = (unsigned char *)(ampHdr+1);
-        long remain_len = len - sizeof(AmpereSpecData);
-        for (i = 0; i < remain_len; i++) {
-            fwrite(next_pos, sizeof(unsigned char), 1, out);
-            fflush(out);
-            next_pos++;
-        }
+        std::memcpy(ampSpecHdr, (void*) ctxInfo, sizeof(AmpereSpecData));
+        out.write((char*) ctxInfo, len);
     }
 }
 
 static void decodeSecPlatformMemory(void *section, AmpereSpecData* ampSpecHdr,
-                                    FILE *out)
+                                    std::ofstream &out)
 {
     CPERSecMemErr *mem = (CPERSecMemErr*) section;
-    fwrite(&mem, sizeof(CPERSecMemErr), 1, out);
-    fflush(out);
+    out.write((char*)section, sizeof(CPERSecMemErr));
     if (mem->ErrorType == MEM_ERROR_TYPE_PARITY)
     {
         ampSpecHdr->typeId = ERROR_TYPE_ID_MCU;
@@ -172,42 +113,28 @@ static void decodeSecPlatformMemory(void *section, AmpereSpecData* ampSpecHdr,
 }
 
 static void decodeSecPcie(void *section, AmpereSpecData* /*ampSpecHdr*/,
-                          FILE *out)
+                          std::ofstream &out)
 {
-    CPERSecPcieErr *pcie = (CPERSecPcieErr*) section;
-    fwrite(&pcie, sizeof(CPERSecPcieErr), 1, out);
-    fflush(out);
+    out.write((char*)section, sizeof(CPERSecPcieErr));
 }
 
-static void decodeCperSection(FILE *cperFile, long basePos,
+static void decodeCperSection(std::vector<uint8_t> &data, long basePos,
                               AmpereSpecData* ampSpecHdr,
-                              FILE *out)
+                              CPERSectionDescriptor *secDesc,
+                              std::ofstream &out)
 {
-    CPERSectionDescriptor secDesc;
-    if (fread(&secDesc, sizeof(CPERSectionDescriptor), 1, cperFile) != 1)
-    {
-        std::cerr << "Invalid section descriptor: Invalid length (log too short)."
-                  << "\n";
-        return;
-    }
-    //Save our current position in the stream.
-    long position = ftell(cperFile);
+    long pos;
 
     //Read section as described by the section descriptor.
-    fseek(cperFile, basePos + secDesc.SectionOffset, SEEK_SET);
-    void *section = malloc(secDesc.SectionLength);
-    if (fread(section, secDesc.SectionLength, 1, cperFile) != 1) {
-        std::cerr << "Section read failed: Could not read "
-                  << secDesc.SectionLength << "bytes from global offset "
-                  << secDesc.SectionOffset << "\n";
-        free(section);
-        return;
-    }
-    Guid *ptr = (Guid *) &secDesc.SectionType;
+    pos = basePos + secDesc->SectionOffset;
+    char *section = new char[secDesc->SectionLength];
+    std::memcpy(section, &data[pos], secDesc->SectionLength);
+    pos += secDesc->SectionLength;
+    Guid *ptr = (Guid *) &secDesc->SectionType;
     if (guidEqual(ptr, &CPER_AMPERE_SPECIFIC))
     {
         std::cout << "RAS Section Type : Ampere Specific\n";
-        decodeSecAmpere(section, secDesc.SectionLength, ampSpecHdr, out);
+        decodeSecAmpere(section, secDesc->SectionLength, ampSpecHdr, out);
     }
     else if (guidEqual(ptr, &CPER_SEC_PROC_ARM))
     {
@@ -226,24 +153,26 @@ static void decodeCperSection(FILE *cperFile, long basePos,
     }
     else
     {
-        std::cerr << "Section Type not support\n";
+        std::cerr << "Section Type: " << std::hex << ptr->Data1 << "-"
+                  << ptr->Data2 << "-" << ptr->Data3 << "-"
+                  << *(uint64_t*)ptr->Data4
+                  << "not support\n";
     }
-    //Seek back to our original position.
-    fseek(cperFile, position, SEEK_SET);
-    free(section);
+
+    delete[] section;
 }
 
-void decodeCperRecord(FILE *cperFile, AmpereSpecData* ampSpecHdr,
-                      FILE *out)
+void decodeCperRecord(std::vector<uint8_t> &data, long pos,
+                      AmpereSpecData* ampSpecHdr,
+                      std::ofstream &out)
 {
     CPERRecodHeader cperHeader;
     int i;
-    long basePos = ftell(cperFile);
+    long basePos = pos;
 
-    if (fread(&cperHeader, sizeof(CPERRecodHeader), 1, cperFile) != 1) {
-        std::cerr << "Invalid CPER header: Invalid length (log too short)." << "\n";
-        return;
-    }
+    std::memcpy(&cperHeader, &data[pos], sizeof(CPERRecodHeader));
+    pos += sizeof(CPERRecodHeader);
+
     //Revert 4 bytes of SignatureStart
     char *sigStr = (char *) &cperHeader.SignatureStart;
     char tmp;
@@ -254,26 +183,19 @@ void decodeCperRecord(FILE *cperFile, AmpereSpecData* ampSpecHdr,
     sigStr[1] = sigStr[2];
     sigStr[2] = tmp;
 
-    fwrite(&cperHeader, sizeof(CPERRecodHeader), 1, out);
-    fflush(out);
+    out.write((char*) &cperHeader, sizeof(CPERRecodHeader));
 
-    CPERSectionDescriptor secDesc;
-    //Save our current position in the stream.
-    long position = ftell(cperFile);
+    CPERSectionDescriptor *secDesc =
+            new CPERSectionDescriptor[cperHeader.SectionCount];
     for (i = 0; i < cperHeader.SectionCount; i++) {
-        if (fread(&secDesc, sizeof(CPERSectionDescriptor), 1, cperFile) != 1)
-        {
-            std::cerr << "Invalid section descriptor: Invalid length (log too short)."
-                      << "\n";
-            return;
-        }
-        fwrite(&secDesc, sizeof(CPERSectionDescriptor), 1, out);
-        fflush(out);
+        std::memcpy(&secDesc[i], &data[pos], sizeof(CPERSectionDescriptor));
+        pos += sizeof(CPERSectionDescriptor);
+        out.write((char*) &secDesc[i], sizeof(CPERSectionDescriptor));
     }
-    //Seek back to our original position.
-    fseek(cperFile, position, SEEK_SET);
 
     for (i = 0; i < cperHeader.SectionCount; i++) {
-        decodeCperSection(cperFile, basePos, ampSpecHdr, out);
+        decodeCperSection(data, basePos, ampSpecHdr, &secDesc[i], out);
     }
+
+    delete[] secDesc;
 }

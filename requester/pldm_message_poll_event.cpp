@@ -19,8 +19,9 @@
 #include <functional>
 #include <iostream>
 #include <thread>
+#include <filesystem>
+#include <cstring>
 #include "cper.hpp"
-
 
 #undef DEBUG
 #define OEM_EVENT               0xFA
@@ -32,6 +33,8 @@ namespace pldm
 {
 
 static std::unique_ptr<sdbusplus::bus::match_t> pldmEventSignal;
+static time_t prevTs = 0;
+static int index = 0;
 
 PldmMessagePollEvent::PldmMessagePollEvent(
     uint8_t eid, sdeventplus::Event& event, sdbusplus::bus::bus& bus,
@@ -39,6 +42,14 @@ PldmMessagePollEvent::PldmMessagePollEvent(
     pldm::requester::Handler<pldm::requester::Request>* handler) :
     EventHandlerInterface(eid, event, bus, requester, handler)
 {
+    std::error_code ec;
+
+    std::filesystem::create_directories(FAULT_LOG_PATH, ec);
+
+    if (ec)
+    {
+        std::cerr << "Can not create fault log path \n" << std::endl;
+    }
     // register event class handler
     registerEventHandler(PLDM_MESSAGE_POLL_EVENT,
                          [&](uint8_t TID, uint8_t eventClass, uint16_t eventID,
@@ -89,9 +100,9 @@ static void addSELLog(uint8_t TID, uint16_t eventID, AmpereSpecData *p)
     evtData1 = SENSOR_TYPE_OEM | socket;
     evtData2 = eventID;
     evtData3 = (p->typeId >> 8) & 0xF;
-    evtData4 = p->typeId & 0xFF;
-    evtData5 = (p->subTypeId >> 8) & 0xFF;
-    evtData6 = p->subTypeId & 0xFF;
+    evtData4 = p->typeId ;
+    evtData5 = p->subTypeId >> 8;
+    evtData6 = p->subTypeId;
     /*
      * OEM data bytes
      *    Ampere IANA: 3 bytes [0x3a 0xcd 0x00]
@@ -133,6 +144,69 @@ static void addSELLog(uint8_t TID, uint16_t eventID, AmpereSpecData *p)
     }
 }
 
+static void addRedfishLog(std::string &primaryLogId, uint8_t type)
+{
+    auto& bus = pldm::utils::DBusHandler::getBus();
+    std::map<std::string, std::variant<std::string, uint64_t>> params;
+
+    switch (type) {
+    case CPER_FORMAT_TYPE:
+        params["Type"] = "CPER";
+        break;
+    //TBD: BERT, Diagnostic
+    default:
+        params["Type"] = "CPER";
+        break;
+    }
+    params["PrimaryLogId"] = primaryLogId;
+    try
+    {
+        auto method = bus.new_method_call(
+            "xyz.openbmc_project.Dump.Manager", "/xyz/openbmc_project/dump/faultlog",
+            "xyz.openbmc_project.Dump.Create", "CreateDump");
+        method.append(params);
+
+        auto response =bus.call(method);
+        if (response.is_method_error())
+        {
+            std::cerr << "createDump error\n";
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "call createDump error: " << e.what() << "\n" ;
+    }
+
+}
+
+static std::string getUniqueEntryID(std::string &prefix)
+{
+    // Get the entry timestamp
+    std::time_t curTs = time(0);
+    std::tm timeStruct = *std::localtime(&curTs);
+    char buf[80];
+    // If the timestamp isn't unique, increment the index
+    if (curTs == prevTs)
+    {
+        index++;
+    }
+    else
+    {
+        // Otherwise, reset it
+        index = 0;
+    }
+    // Save the timestamp
+    prevTs = curTs;
+    strftime(buf, sizeof(buf), "%Y-%m-%d.%X", &timeStruct);
+    std::string uniqueId(buf);
+    uniqueId = prefix + uniqueId;
+    if (index > 0)
+    {
+        uniqueId += "_" + std::to_string(index);
+    }
+    return uniqueId;
+}
+
 int PldmMessagePollEvent::pldmPollForEventMessage(uint8_t TID,
                                                   uint8_t /*eventClass*/,
                                                   uint16_t eventID,
@@ -146,39 +220,46 @@ int PldmMessagePollEvent::pldmPollForEventMessage(uint8_t TID,
     }
     std::cout << "\n";
 #endif
-
-    //Open a stream to the CPER event data.
-    FILE* stream = fmemopen((void*)data.data(), data.size(), "r");
+    long pos;
     AmpereSpecData ampHdr;
     CommonEventData evtData;
+    pos = 0;
 
-    fseek(stream, 0, SEEK_SET);
-    if (fread(&evtData, sizeof(CommonEventData), 1, stream) != 1) {
-        std::cerr << "Invalid event data: Invalid length (log too short)." << "\n";
+    std::memcpy((void*)&evtData, (void*)&data[pos], sizeof(CommonEventData));
+    pos += sizeof(CommonEventData);
+
+    std::string prefix;
+    switch (evtData.formatType) {
+    case CPER_FORMAT_TYPE:
+        prefix = "RAS_CPER_";
+        break;
+    default:
+        prefix = "RAS_Unknown_";
+        break;
+    }
+
+    std::string primaryLogId = getUniqueEntryID(prefix);
+    std::string faultLogFilePath = std::string(FAULT_LOG_PATH) + primaryLogId;
+    std::ofstream out (faultLogFilePath.c_str(), std::ofstream::binary);
+    if(!out.is_open())
+    {
+        std::cerr << "Can not open ofstream for CPER binary file\n";
         return -1;
     }
 
     switch (evtData.formatType) {
-    case CPER_FORMAT_TYPE:{
-        /*TBD: Define CPER storage location */
-        FILE* out = fopen("/tmp/cper.dump", "w");
-        if (out == NULL)
-        {
-            std::cerr << "Can not open CPER storage\n";
-            return -1;
-        }
-        decodeCperRecord(stream, &ampHdr, out);
-        fclose(out);
-    }break;
+    case CPER_FORMAT_TYPE:
+        decodeCperRecord(data, pos, &ampHdr, out);
+        break;
     //TBD: BERT, Diagnostic
     default:
         std::cerr << "Not support format type: " << evtData.formatType << "\n";
         break;
     }
-
     addSELLog(TID, eventID, &ampHdr);
+    addRedfishLog(primaryLogId, evtData.formatType);
 
-    fclose(stream);
+    out.close();
     return data.size();
 }
 

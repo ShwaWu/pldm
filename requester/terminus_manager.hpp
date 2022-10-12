@@ -103,6 +103,8 @@ class Manager
             {
                 continue;
             }
+            std::unique_ptr<TerminusHandler>& dev = mDevices[it];
+            dev->stopTerminusHandler();
             mDevices.erase(it);
         }
         return;

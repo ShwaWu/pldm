@@ -142,6 +142,11 @@ requester::Coroutine TerminusHandler::discoveryTerminus()
                       << std::endl;
         }
     }
+    /* Check whether the terminus is removed when discoverying */
+    if (stopTerminusPolling)
+    {
+        co_return PLDM_SUCCESS;
+    }
 
     if (supportPLDMType(PLDM_PLATFORM))
     {
@@ -922,6 +927,12 @@ requester::Coroutine TerminusHandler::getDevPDR(uint32_t nextRecordHandle)
               << " get terminus PDRs." << std::endl;
     do
     {
+        /* Check whether the terminus is removed when getting PDRs */
+        if (stopTerminusPolling)
+        {
+            co_return PLDM_SUCCESS;
+        }
+
         std::vector<uint8_t> requestMsg(sizeof(pldm_msg_hdr) +
                                         PLDM_GET_PDR_REQ_BYTES);
         auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
@@ -1911,6 +1922,12 @@ void TerminusHandler::updateSensorKeys()
     for(auto it = _state.begin(); it != _state.end(); ++it) {
         sensorKeys.push_back(it->first);
     }
+}
+
+void TerminusHandler::stopTerminusHandler()
+{
+    stopTerminusPolling = true;
+    continuePollSensor = false;
 }
 
 } // namespace terminus

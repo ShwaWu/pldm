@@ -2,7 +2,7 @@
 
 #include "pldm_message_poll_event.hpp"
 
-#include "libpldm/requester/pldm.h"
+#include "libpldm/pldm.h"
 
 #include <assert.h>
 #include <systemd/sd-journal.h>

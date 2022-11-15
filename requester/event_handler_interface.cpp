@@ -1,5 +1,5 @@
 #include "config.h"
-#include "libpldm/requester/pldm.h"
+#include "libpldm/pldm.h"
 #include "event_hander_interface.hpp"
 
 #include <assert.h>

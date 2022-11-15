@@ -174,7 +174,7 @@ requester::Coroutine TerminusHandler::discoveryTerminus()
                           << elapsed_seconds.count() << "s at "
                           << getCurrentSystemTime() << std::endl;
             }
-            if (this->effecterPDRs.size() > 0)
+            if (this->compNumSensorPDRs.size() > 0)
             {
                 this->createCompactNummericSensorIntf(this->compNumSensorPDRs);
             }

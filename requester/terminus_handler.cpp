@@ -1437,66 +1437,76 @@ void TerminusHandler::createNummericEffecterDBusIntf(const PDRList& sensorPDRs)
     return;
 }
 
+size_t getEffecterNameLanguageTag(const uint8_t* ptr,
+    std::string *languageTag)
+{
+    std::string lang = "";
+    while (*ptr != 0)
+    {
+        lang.push_back(*ptr);
+        ptr++;
+    }
+    *languageTag = lang;
+
+    return lang.length() + 1;
+}
+
+size_t getEffterStringName(const uint8_t* ptr,
+    std::string *name)
+{
+    std::string nameStr = "";
+    uint8_t lsb = *ptr;
+    ptr ++;
+    uint8_t msb = *ptr;
+    while (((msb << 8) + lsb) != 0)
+    {
+        nameStr.push_back((msb << 8) + lsb);
+        ptr ++;
+        lsb = *ptr;
+        ptr ++;
+        msb = *ptr;
+    }
+    *name = nameStr;
+
+    return 2*(nameStr.length() + 1);
+}
+
 void TerminusHandler::parseAuxNamePDRs(const PDRList& sensorPDRs)
 {
     for (const auto& sensorPDR : sensorPDRs)
     {
+
+        auto p = sensorPDR.data();
         auto pdr =
-            reinterpret_cast<const pldm_aux_name_value_pdr*>(sensorPDR.data());
+            reinterpret_cast<const pldm_effecter_aux_name_pdr*>(sensorPDR.data());
         if (!pdr)
         {
             std::cerr << "Failed to get Aux Name PDR" << std::endl;
             return;
         }
+
+        p += sizeof(pldm_effecter_aux_name_pdr) - sizeof(pldm_effecter_name);
         auto key = std::make_tuple(pdr->terminus_handle, pdr->effecter_id);
-        int auxNameSize = pdr->hdr.length - sizeof(pdr->effecter_id) -
-                          sizeof(pdr->terminus_handle) -
-                          sizeof(pdr->sensor_count);
-        int cnt = 0;
         auxNameSensorMapping sensorNameMapping;
-        for (int j = 0; j < pdr->sensor_count; j++)
+        for (int i = 0; i < pdr->effecter_count; i++)
         {
             auxNameList nameLists;
-            int nameCount = pdr->aux_name_datas[cnt];
-            cnt++;
-            for (int i = 0; i < nameCount; i++)
+            auto effecterName = reinterpret_cast<const pldm_effecter_name*>(p);
+
+            p += sizeof(effecterName->name_string_count);
+            for (int j = 0; j < effecterName->name_string_count; j++)
             {
-                // find languageTag
-                int start = cnt;
-                std::string lang = "";
+                std::string languageTag = "";
                 std::string name = "";
-                while (cnt < auxNameSize)
-                {
-                    if (pdr->aux_name_datas[cnt] == 0)
-                    {
-                        for (int t = start; t < cnt; t++)
-                        {
-                            lang.push_back((char)pdr->aux_name_datas[t]);
-                        }
-                        cnt++;
-                        break;
-                    }
-                    cnt++;
-                }
-                // find name
-                start = cnt;
-                while (cnt < auxNameSize)
-                {
-                    if (((pdr->aux_name_datas[cnt] << 8) +
-                         pdr->aux_name_datas[cnt + 1]) == 0)
-                    {
-                        for (int t = start; t < cnt; t += 2)
-                        {
-                            name.push_back((char)pdr->aux_name_datas[t]);
-                        }
-                        cnt += 2;
-                        break;
-                    }
-                    cnt += 2;
-                };
-                std::cerr << "Add \"" << lang << "\":\"" << name
+                auto languageTagSize = getEffecterNameLanguageTag(p, &languageTag);
+                p += languageTagSize;
+
+                auto nameSize = getEffterStringName(p, &name);
+                p += nameSize;
+
+                nameLists.emplace_back(std::make_tuple(languageTag, name));
+                std::cerr << "Add \"" << languageTag << "\":\"" << name
                           << "\" to effecter aux name lists" << std::endl;
-                nameLists.emplace_back(std::make_tuple(lang, name));
             }
             if (!nameLists.size())
             {

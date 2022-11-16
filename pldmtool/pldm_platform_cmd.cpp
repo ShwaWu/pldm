@@ -797,65 +797,73 @@ class GetPDR : public CommandInterface
         }
     }
 
-    void printAuxNamePDR(uint8_t* data, ordered_json& output)
+    size_t getEffecterNameLanguageTag(const uint8_t* ptr,
+        std::string *languageTag)
     {
-        struct pldm_aux_name_value_pdr* pdr =
-            (struct pldm_aux_name_value_pdr*)data;
+        std::string lang = "";
+        while (*ptr != 0)
+        {
+            lang.push_back(*ptr);
+            ptr++;
+        }
+        *languageTag = lang;
+
+        return lang.length() + 1;
+    }
+
+    size_t getEffterStringName(const uint8_t* ptr,
+        std::string *name)
+    {
+        std::string nameStr = "";
+        uint8_t lsb = *ptr;
+        ptr ++;
+        uint8_t msb = *ptr;
+        while (((msb << 8) + lsb) != 0)
+        {
+            nameStr.push_back((msb << 8) + lsb);
+            ptr ++;
+            lsb = *ptr;
+            ptr ++;
+            msb = *ptr;
+        }
+        *name = nameStr;
+
+        return 2*(nameStr.length() + 1);
+    }
+
+    void printEffecterAuxNamePDR(uint8_t* data, ordered_json& output)
+    {
+        auto p = data;
+        auto pdr = reinterpret_cast<const pldm_effecter_aux_name_pdr*>(data);
         if (!pdr)
         {
-            std::cerr << "Failed to get sensor Aux Name PDR" << std::endl;
+            std::cerr << "Failed to get effecter Aux Name PDR" << std::endl;
             return;
         }
         output["terminusHandle"] = int(pdr->terminus_handle);
         output["sensorId"] = int(pdr->effecter_id);
-        output["sensorCount"] = int(pdr->sensor_count);
-        int auxNameSize = pdr->hdr.length - sizeof(pdr->effecter_id) -
-                          sizeof(pdr->terminus_handle) -
-                          sizeof(pdr->sensor_count);
-        int cnt = 0;
-        for (int j = 0; j < pdr->sensor_count; j++)
+        output["sensorCount"] = int(pdr->effecter_count);
+
+        p += sizeof(pldm_effecter_aux_name_pdr) - sizeof(pldm_effecter_name);
+        for (int j = 0; j < pdr->effecter_count; j++)
         {
-            int name_count = pdr->aux_name_datas[cnt];
-            cnt++;
             std::vector<std::string> languageTags;
             std::vector<std::string> names;
-            for (int i = 0; i < name_count; i++)
+
+            auto effecterName = reinterpret_cast<const pldm_effecter_name*>(p);
+            int name_count = effecterName->name_string_count;
+            p += sizeof(effecterName->name_string_count);
+            for (int i = 0; i < effecterName->name_string_count; i++)
             {
-                // find languageTag
-                int start = cnt;
-                while (cnt < auxNameSize)
-                {
-                    if (pdr->aux_name_datas[cnt] == 0)
-                    {
-                        std::string lang = "";
-                        for (int t = start; t < cnt; t++)
-                        {
-                            lang.push_back((char)pdr->aux_name_datas[t]);
-                        }
-                        languageTags.push_back(lang);
-                        cnt++;
-                        break;
-                    }
-                    cnt++;
-                }
-                // find name
-                start = cnt;
-                while (cnt < auxNameSize)
-                {
-                    if (((pdr->aux_name_datas[cnt] << 8) +
-                         pdr->aux_name_datas[cnt + 1]) == 0)
-                    {
-                        std::string name = "";
-                        for (int t = start; t < cnt; t += 2)
-                        {
-                            name.push_back((char)pdr->aux_name_datas[t]);
-                        }
-                        names.push_back(name);
-                        cnt += 2;
-                        break;
-                    }
-                    cnt += 2;
-                };
+                std::string languageTag = "";
+                std::string name = "";
+                auto languageTagSize = getEffecterNameLanguageTag(p, &languageTag);
+                p += languageTagSize;
+
+                auto nameSize = getEffterStringName(p, &name);
+                p += nameSize;
+                languageTags.push_back(languageTag);
+                names.push_back(name);
             }
             for (int i = 0; i < name_count; i++)
             {
@@ -1181,11 +1189,8 @@ class GetPDR : public CommandInterface
             case PLDM_NUMERIC_EFFECTER_PDR:
                 printNumericEffecterPDR(data, output);
                 break;
-            case PLDM_SENSOR_AUXILIARY_NAMES_PDR:
-                printAuxNamePDR(data, output);
-                break;
             case PLDM_EFFECTER_AUXILIARY_NAMES_PDR:
-                printAuxNamePDR(data, output);
+                printEffecterAuxNamePDR(data, output);
                 break;
             case PLDM_STATE_EFFECTER_PDR:
                 printStateEffecterPDR(data, output);

@@ -1928,7 +1928,7 @@ void TerminusHandler::getSensorReading(uint16_t sensor_id, uint8_t pdr_type)
 void TerminusHandler::updateSensorKeys()
 {
     sensorKeys.clear();
-    for(auto it = _sensorObjects.begin(); it != _sensorObjects.end(); ++it) {
+    for(auto it = _state.begin(); it != _state.end(); ++it) {
         sensorKeys.push_back(it->first);
     }
 }

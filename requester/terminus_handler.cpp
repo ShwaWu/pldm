@@ -1805,26 +1805,26 @@ void TerminusHandler::processSensorReading(mctp_eid_t, const pldm_msg* response,
             switch (dataSize)
             {
                 case PLDM_SENSOR_DATA_SIZE_UINT8:
-                    sensorValue = static_cast<float>(presentReading.value_u8);
+                    sensorValue = static_cast<double>(presentReading.value_u8);
                     break;
                 case PLDM_SENSOR_DATA_SIZE_SINT8:
-                    sensorValue = static_cast<float>(presentReading.value_s8);
+                    sensorValue = static_cast<double>(presentReading.value_s8);
                     break;
                 case PLDM_SENSOR_DATA_SIZE_UINT16:
                     sensorValue =
-                        static_cast<float>(le16toh(presentReading.value_u16));
+                        static_cast<double>(presentReading.value_u16);
                     break;
                 case PLDM_SENSOR_DATA_SIZE_SINT16:
                     sensorValue =
-                        static_cast<float>(le16toh(presentReading.value_s16));
+                        static_cast<double>(presentReading.value_s16);
                     break;
                 case PLDM_SENSOR_DATA_SIZE_UINT32:
                     sensorValue =
-                        static_cast<float>(le32toh(presentReading.value_u32));
+                        static_cast<double>(presentReading.value_u32);
                     break;
                 case PLDM_SENSOR_DATA_SIZE_SINT32:
                     sensorValue =
-                        static_cast<float>(le32toh(presentReading.value_s32));
+                        static_cast<double>(presentReading.value_s32);
                     break;
                 default:
                     sensorValue = std::numeric_limits<double>::quiet_NaN();

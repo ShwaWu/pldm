@@ -107,7 +107,7 @@ static void decodeSecPlatformMemory(void *section, AmpereSpecData* ampSpecHdr,
     out.write((char*)section, sizeof(CPERSecMemErr));
     if (mem->ErrorType == MEM_ERROR_TYPE_PARITY)
     {
-        ampSpecHdr->typeId = ERROR_TYPE_ID_MCU;
+        ampSpecHdr->typeId.member.ipType = ERROR_TYPE_ID_MCU;
         ampSpecHdr->subTypeId = SUBTYPE_ID_PARITY;
     }
 }

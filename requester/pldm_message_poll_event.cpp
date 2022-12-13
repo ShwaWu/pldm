@@ -100,8 +100,9 @@ static void addSELLog(uint8_t TID, uint16_t eventID, AmpereSpecData *p)
     recordType = 0xD0;
     evtData1 = SENSOR_TYPE_OEM | socket;
     evtData2 = eventID;
-    evtData3 = (p->typeId >> 8) & 0xF;
-    evtData4 = p->typeId ;
+    evtData3 = ((p->typeId.member.payloadType << 4) & 0xF0) |
+               ((p->typeId.member.ipType >> 8) & 0xF);
+    evtData4 = p->typeId.member.ipType ;
     evtData5 = p->subTypeId >> 8;
     evtData6 = p->subTypeId;
     /*

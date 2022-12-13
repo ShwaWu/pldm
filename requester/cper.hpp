@@ -35,9 +35,19 @@ typedef struct {
     uint16_t length;
 } __attribute__((packed)) CommonEventData;
 
+union AmpereSpecDataType{
+    struct AmpereSpecDataTypeStruct{
+        uint16_t ipType      : 11;
+        uint16_t isBert      : 1;
+        uint16_t payloadType : 4;
+    }member;
+
+    uint16_t type;
+} __attribute__((packed));
+
 typedef struct
 {
-    uint16_t typeId;
+    union AmpereSpecDataType typeId;
     uint16_t subTypeId;
     uint32_t instanceId;
 }__attribute__((packed)) AmpereSpecData;

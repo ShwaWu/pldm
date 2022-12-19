@@ -7,6 +7,8 @@
 #include <fstream>
 #include <vector>
 
+#define CPER_LOG_DIR               "/usr/share/pldm/cper/"
+
 typedef struct {
     uint32_t  Data1;
     uint16_t  Data2;

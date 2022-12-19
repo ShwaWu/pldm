@@ -99,6 +99,10 @@ else
   )
 endif
 
+# Include libnvparm as a static library, compiled with `make`.
+libnvparm_dir = meson.current_source_dir() + '/libnvparm/'
+libnvparm_dep = cpp.find_library('nvparm', dirs : libnvparm_dir)
+
 if get_option('oe-sdk').enabled()
   # Setup OE SYSROOT
   OECORE_TARGET_SYSROOT = run_command('sh', '-c', 'echo $OECORE_TARGET_SYSROOT').stdout().strip()
@@ -167,6 +171,7 @@ deps = [
   sdbusplus,
   sdeventplus,
   stdplus,
+  libnvparm_dep,
 ]
 
 if get_option('libpldmresponder').enabled()
@@ -193,6 +198,7 @@ executable(
   'requester/mctp_endpoint_discovery.cpp',
   'requester/pldm_message_poll_event.cpp',
   'requester/cper.cpp',
+  'requester/bert_handler.cpp',
   'requester/numeric_sensor_state.cpp',
   'sensors/pldm_sensor.cpp',
   'sensors/hwmon.cpp',

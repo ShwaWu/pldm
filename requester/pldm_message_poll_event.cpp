@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <cstring>
 #include "cper.hpp"
+#include "bert.hpp"
 
 #undef DEBUG
 #define OEM_EVENT               0xaa
@@ -34,8 +35,11 @@ namespace pldm
 
 static std::unique_ptr<sdbusplus::bus::match_t> pldmEventSignal;
 static std::unique_ptr<sdbusplus::bus::match_t> pldmNumericSensorEventSignal;
+static std::unique_ptr<sdbusplus::bus::match_t> hostTransitionChangeSignal;
 static time_t prevTs = 0;
 static int index = 0;
+static bool isBertTrigger = false;
+static std::string bertPrimaryLogId;
 
 PldmMessagePollEvent::PldmMessagePollEvent(
     uint8_t eid, sdeventplus::Event& event, sdbusplus::bus::bus& bus,
@@ -51,6 +55,7 @@ PldmMessagePollEvent::PldmMessagePollEvent(
     {
         std::cerr << "Can not create fault log path \n" << std::endl;
     }
+
     // register event class handler
     registerEventHandler(PLDM_MESSAGE_POLL_EVENT,
                          [&](uint8_t TID, uint8_t eventClass, uint16_t eventID,
@@ -146,20 +151,12 @@ static void addSELLog(uint8_t TID, uint16_t eventID, AmpereSpecData *p)
     }
 }
 
-static void addRedfishLog(std::string &primaryLogId, uint8_t type)
+static void addRedfishLog(std::string &primaryLogId, uint8_t isBert)
 {
     auto& bus = pldm::utils::DBusHandler::getBus();
     std::map<std::string, std::variant<std::string, uint64_t>> params;
 
-    switch (type) {
-    case CPER_FORMAT_TYPE:
-        params["Type"] = "CPER";
-        break;
-    //TBD: BERT, Diagnostic
-    default:
-        params["Type"] = "CPER";
-        break;
-    }
+    params["Type"] = (isBert) ? "Crashdump" : "CPER";
     params["PrimaryLogId"] = primaryLogId;
     try
     {
@@ -230,38 +227,46 @@ int PldmMessagePollEvent::pldmPollForEventMessage(uint8_t TID,
     std::memcpy((void*)&evtData, (void*)&data[pos], sizeof(CommonEventData));
     pos += sizeof(CommonEventData);
 
-    std::string prefix;
-    switch (evtData.formatType) {
-    case CPER_FORMAT_TYPE:
-        prefix = "RAS_CPER_";
-        break;
-    default:
-        prefix = "RAS_Unknown_";
-        break;
-    }
+    if (!std::filesystem::is_directory(CPER_LOG_DIR))
+         std::filesystem::create_directories(CPER_LOG_DIR);
+    if (!std::filesystem::is_directory(BERT_LOG_DIR))
+         std::filesystem::create_directories(BERT_LOG_DIR);
 
-    std::string primaryLogId = getUniqueEntryID(prefix);
-    std::string faultLogFilePath = std::string(FAULT_LOG_PATH) + primaryLogId;
-    std::ofstream out (faultLogFilePath.c_str(), std::ofstream::binary);
+    std::string cperFile = std::string(CPER_LOG_DIR) + "cper.dump";
+    std::ofstream out (cperFile.c_str(), std::ofstream::binary);
     if(!out.is_open())
     {
         std::cerr << "Can not open ofstream for CPER binary file\n";
         return -1;
     }
-
-    switch (evtData.formatType) {
-    case CPER_FORMAT_TYPE:
-        decodeCperRecord(data, pos, &ampHdr, out);
-        break;
-    //TBD: BERT, Diagnostic
-    default:
-        std::cerr << "Not support format type: " << evtData.formatType << "\n";
-        break;
-    }
-    addSELLog(TID, eventID, &ampHdr);
-    addRedfishLog(primaryLogId, evtData.formatType);
-
+    decodeCperRecord(data, pos, &ampHdr, out);
     out.close();
+
+    std::string prefix;
+    prefix = (ampHdr.typeId.member.isBert) ? "RAS_BERT_": "RAS_CPER_";
+
+    isBertTrigger = (ampHdr.typeId.member.isBert) ? true : false;
+
+    std::string bertTriggerFile = std::string(BERT_LOG_DIR) + "bert_trigger";
+    std::ofstream outBertTrigger (bertTriggerFile.c_str(), std::ofstream::binary);
+    if(!outBertTrigger.is_open())
+    {
+        std::cerr << "Can not open ofstream for bert_trigger file\n";
+        return -1;
+    }
+    char val = (isBertTrigger) ? '1': '0';
+    outBertTrigger.write(&val, sizeof(val));
+    outBertTrigger.close();
+
+    std::string primaryLogId = getUniqueEntryID(prefix);
+    std::string faultLogFilePath = std::string(FAULT_LOG_PATH) + primaryLogId;
+    std::filesystem::copy(cperFile.c_str(), faultLogFilePath.c_str());
+    std::filesystem::remove(cperFile.c_str());
+    bertPrimaryLogId = primaryLogId;
+
+    addSELLog(TID, eventID, &ampHdr);
+    addRedfishLog(primaryLogId, ampHdr.typeId.member.isBert);
+
     return data.size();
 }
 
@@ -350,6 +355,30 @@ void PldmMessagePollEvent::handlePldmDbusEventSignal()
                           << e.what() << std::endl;
             }
         });
+
+    hostTransitionChangeSignal = std::make_unique<sdbusplus::bus::match_t>(
+            pldm::utils::DBusHandler::getBus(),
+            sdbusplus::bus::match::rules::propertiesChanged(
+                    "/xyz/openbmc_project/state/host0",
+                    "xyz.openbmc_project.State.Host"),
+                    [&](sdbusplus::message::message& msg) {
+        std::string statusInterface;
+        std::map<std::string, std::variant<std::string>> msgData;
+        msg.read(statusInterface, msgData);
+        auto propertyMap = msgData.find("CurrentHostState");
+        if (propertyMap != msgData.end())
+            {
+                // Extract the CurrentHostState
+                auto& currentHostState =
+                        std::get<std::string>(propertyMap->second);
+                if (currentHostState ==
+                    "xyz.openbmc_project.State.Host.HostState.TransitioningToOff")
+                {
+                    bertHandler(isBertTrigger, bertPrimaryLogId);
+                    isBertTrigger = false;
+                }
+            }
+    });
 }
 
 } // namespace pldm

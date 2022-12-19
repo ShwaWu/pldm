@@ -1,4 +1,5 @@
 #include "numeric_sensor_state.hpp"
+#include "bert.hpp"
 
 #include <sdeventplus/event.hpp>
 #include <sdeventplus/source/event.hpp>
@@ -183,6 +184,20 @@ void NumericSensorHanler::handleDbusEventSignalMatch()
                                         REDFISH_MESSAGE_ID.c_str(),
                                         "REDFISH_MESSAGE_ARGS=%s",
                                         description.c_str(), NULL);
+                    }
+                    /* Handler BERT flow in case host on. BMC should handshake
+                     * with Host to accessing SPI-NOR when UEFI boot complete.
+                     */
+                    if (failFlg)
+                        setHostStatus(HOST_FAILURE);
+                    else
+                        setHostStatus(HOST_BOOTING);
+                    if ((byte3 == 0x03) && (byte2 == 0x10) && isBertCheck())
+                    {
+                        std::cerr << "Host is on, UEFI boot complete."
+                                     "Read SPI to check valid BERT\n";
+                        checkValidBertRecord(HOST_ON);
+                        setBertCheck(false);
                     }
                 }
             }

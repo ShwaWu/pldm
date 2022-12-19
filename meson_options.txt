@@ -1,6 +1,7 @@
 option('tests', type: 'feature', description: 'Build tests', value: 'enabled')
 option('oe-sdk', type: 'feature', description: 'Enable OE SDK')
 option('oem-ibm', type: 'feature', description: 'Enable IBM OEM PLDM', value: 'enabled')
+option('ampere', type: 'feature', description: 'Enable AMPERE PLDM')
 option('utilities', type: 'feature', description: 'Enable debug utilities', value: 'enabled')
 option('libpldmresponder', type: 'feature', description: 'Enable libpldmresponder', value: 'enabled')
 
@@ -32,5 +33,11 @@ option('poll-sensor-timer-interval', type: 'integer', min: 1000, max: 100000, de
 option('normal-ras-event-timer', type: 'integer', min: 2000, max: 10000, description: 'The amount of time a BMC periodcally poll normal RAS event in milliseconds', value: 5000)
 option('critical-ras-event-timer', type: 'integer', min: 25, max: 100, description: 'The amount of time a BMC periodcally poll critical RAS event in milliseconds', value: 50)
 option('poll-req-event-timer', type: 'integer', min: 25, max: 100, description: 'The amount of time a BMC send each part in multipart pollForEventMessage in milliseconds', value: 25)
+option('ampere-bert-hostoff-timer', type: 'integer', min: 10000, max: 50000, description: 'The amount of time a BMC need to wait before checking current host state in milliseconds', value: 20000)
+option('ampere-bert-hoston-timer', type: 'integer', min: 1000, max: 20000, description: 'The amount of time a BMC need to wait to make sure host send boot event to BMC in milliseconds', value: 5000)
+option('ampere-bert-hostfail-timer', type: 'integer', min: 60000, max: 180000, description: 'The amount of time a BMC need to wait to make sure host boot fail in milliseconds', value: 120000)
+option('ampere-bert-claim-spi-timer', type: 'integer', min: 100, max: 1000, description: 'The amount of time a BMC can claim the SPI in milliseconds', value: 500)
+option('ampere-handshake-spi-script', type : 'string', value : '/usr/sbin/ampere_spi_util.sh', description : 'Script to grant a permission to access SPI-NOR')
 
-option('fault_log_path', type : 'string', value : '/run/bmcweb/redfish/v1/Systems/system/LogServices/', description : 'File system path containing Fault logs')
+option('cper-log-path', type : 'string', value : '/var/lib/faultlogs/cper/', description : 'File system path containing CPER logs')
+option('crashdump-log-path', type : 'string', value : '/var/lib/faultlogs/crashdump/', description : 'File system path containing CrashDump logs')

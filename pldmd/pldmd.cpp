@@ -8,6 +8,9 @@
 #include "requester/mctp_endpoint_discovery.hpp"
 #include "requester/request.hpp"
 #include "requester/terminus_manager.hpp"
+#ifdef AMPERE
+#include "requester/bert.hpp"
+#endif
 
 #include <err.h>
 #include <getopt.h>
@@ -321,6 +324,10 @@ int main(int argc, char** argv)
         std::make_unique<fw_update::Manager>(event, reqHandler, instanceIdDb);
     std::unique_ptr<MctpDiscovery> mctpDiscoveryHandler =
         std::make_unique<MctpDiscovery>(bus, fwManager.get(), devManager.get());
+
+#ifdef AMPERE
+    handleBertHostOffEvent();
+#endif
 
     auto callback = [verbose, &invoker, &reqHandler, currentSendbuffSize,
                      &fwManager](IO& io, int fd, uint32_t revents) mutable {

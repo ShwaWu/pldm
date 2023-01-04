@@ -8,6 +8,7 @@
 #define BERT_NAME_MAX_SIZE         15
 #define BERT_MAX_NUM_FILE          3
 #define BERT_CRASH_OCM_SIZE        0x40000
+#define BLOCK_SIZE                 65536 /* 64KB */
 
 typedef union {
     struct AmpereBertFileFlagsStruct{
@@ -80,8 +81,29 @@ typedef struct {
 } __attribute__((packed)) AmpereBertPayloadSection;
 
 
+enum bert_host_state{
+    HOST_ON = 0,
+    HOST_OFF = 1,
+};
+
+enum bert_host_status{
+    HOST_BOOTING = 0,
+    HOST_COMPLETE = 1,
+    HOST_FAILURE = 2,
+};
+
+enum bert_handshake_cmd{
+    START_HS = 0,
+    STOP_HS = 1,
+};
 
 
-int bertHandler(bool isBertTrigger, std::string &primaryLogId);
+int bertHandler(bool isBertTrigger, bert_host_state state);
+void checkValidBertRecord(bert_host_state state);
+void handleBertHostOnEvent(void);
+void handleBertHostOffEvent(void);
+void setBertCheck(bool val);
+bool isBertCheck();
+void setHostStatus(bert_host_status val);
 
 #endif /* PLDM_REQUESTER_BERT_HPP_ */

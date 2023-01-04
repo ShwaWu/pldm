@@ -3,6 +3,7 @@
 #include "pldm_message_poll_event.hpp"
 
 #include "libpldm/pldm.h"
+#include "common/utils.hpp"
 
 #include <assert.h>
 #include <systemd/sd-journal.h>
@@ -30,16 +31,15 @@
 
 #define CPER_FORMAT_TYPE        0
 
+using namespace pldm::utils;
+
 namespace pldm
 {
 
 static std::unique_ptr<sdbusplus::bus::match_t> pldmEventSignal;
 static std::unique_ptr<sdbusplus::bus::match_t> pldmNumericSensorEventSignal;
 static std::unique_ptr<sdbusplus::bus::match_t> hostTransitionChangeSignal;
-static time_t prevTs = 0;
-static int index = 0;
 static bool isBertTrigger = false;
-static std::string bertPrimaryLogId;
 
 PldmMessagePollEvent::PldmMessagePollEvent(
     uint8_t eid, sdeventplus::Event& event, sdbusplus::bus::bus& bus,
@@ -47,14 +47,10 @@ PldmMessagePollEvent::PldmMessagePollEvent(
     pldm::requester::Handler<pldm::requester::Request>* handler) :
     EventHandlerInterface(eid, event, bus, requester, handler)
 {
-    std::error_code ec;
-
-    std::filesystem::create_directories(FAULT_LOG_PATH, ec);
-
-    if (ec)
-    {
-        std::cerr << "Can not create fault log path \n" << std::endl;
-    }
+    if (!std::filesystem::is_directory(CPER_LOG_PATH))
+         std::filesystem::create_directories(CPER_LOG_PATH);
+    if (!std::filesystem::is_directory(CRASHDUMP_LOG_PATH))
+        std::filesystem::create_directories(CRASHDUMP_LOG_PATH);
 
     // register event class handler
     registerEventHandler(PLDM_MESSAGE_POLL_EVENT,
@@ -71,6 +67,7 @@ PldmMessagePollEvent::PldmMessagePollEvent(
     });
 
     handlePldmDbusEventSignal();
+    handleBertHostOnEvent();
 }
 
 static void addSELLog(uint8_t TID, uint16_t eventID, AmpereSpecData *p)
@@ -151,61 +148,6 @@ static void addSELLog(uint8_t TID, uint16_t eventID, AmpereSpecData *p)
     }
 }
 
-static void addRedfishLog(std::string &primaryLogId, uint8_t isBert)
-{
-    auto& bus = pldm::utils::DBusHandler::getBus();
-    std::map<std::string, std::variant<std::string, uint64_t>> params;
-
-    params["Type"] = (isBert) ? "Crashdump" : "CPER";
-    params["PrimaryLogId"] = primaryLogId;
-    try
-    {
-        auto method = bus.new_method_call(
-            "xyz.openbmc_project.Dump.Manager", "/xyz/openbmc_project/dump/faultlog",
-            "xyz.openbmc_project.Dump.Create", "CreateDump");
-        method.append(params);
-
-        auto response =bus.call(method);
-        if (response.is_method_error())
-        {
-            std::cerr << "createDump error\n";
-        }
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "call createDump error: " << e.what() << "\n" ;
-    }
-
-}
-
-static std::string getUniqueEntryID(std::string &prefix)
-{
-    // Get the entry timestamp
-    std::time_t curTs = time(0);
-    std::tm timeStruct = *std::localtime(&curTs);
-    char buf[80];
-    // If the timestamp isn't unique, increment the index
-    if (curTs == prevTs)
-    {
-        index++;
-    }
-    else
-    {
-        // Otherwise, reset it
-        index = 0;
-    }
-    // Save the timestamp
-    prevTs = curTs;
-    strftime(buf, sizeof(buf), "%Y-%m-%d.%X", &timeStruct);
-    std::string uniqueId(buf);
-    uniqueId = prefix + uniqueId;
-    if (index > 0)
-    {
-        uniqueId += "_" + std::to_string(index);
-    }
-    return uniqueId;
-}
-
 int PldmMessagePollEvent::pldmPollForEventMessage(uint8_t TID,
                                                   uint8_t /*eventClass*/,
                                                   uint16_t eventID,
@@ -242,9 +184,7 @@ int PldmMessagePollEvent::pldmPollForEventMessage(uint8_t TID,
     decodeCperRecord(data, pos, &ampHdr, out);
     out.close();
 
-    std::string prefix;
-    prefix = (ampHdr.typeId.member.isBert) ? "RAS_BERT_": "RAS_CPER_";
-
+    std::string prefix = "RAS_CPER_";
     isBertTrigger = (ampHdr.typeId.member.isBert) ? true : false;
 
     std::string bertTriggerFile = std::string(BERT_LOG_DIR) + "bert_trigger";
@@ -258,14 +198,14 @@ int PldmMessagePollEvent::pldmPollForEventMessage(uint8_t TID,
     outBertTrigger.write(&val, sizeof(val));
     outBertTrigger.close();
 
-    std::string primaryLogId = getUniqueEntryID(prefix);
-    std::string faultLogFilePath = std::string(FAULT_LOG_PATH) + primaryLogId;
+    std::string primaryLogId = pldm::utils::getUniqueEntryID(prefix);
+    std::string type = "CPER";
+    std::string faultLogFilePath = std::string(CPER_LOG_PATH) + primaryLogId;
     std::filesystem::copy(cperFile.c_str(), faultLogFilePath.c_str());
     std::filesystem::remove(cperFile.c_str());
-    bertPrimaryLogId = primaryLogId;
 
     addSELLog(TID, eventID, &ampHdr);
-    addRedfishLog(primaryLogId, ampHdr.typeId.member.isBert);
+    pldm::utils::addFaultLogToRedfish(primaryLogId, type);
 
     return data.size();
 }
@@ -374,7 +314,7 @@ void PldmMessagePollEvent::handlePldmDbusEventSignal()
                 if (currentHostState ==
                     "xyz.openbmc_project.State.Host.HostState.TransitioningToOff")
                 {
-                    bertHandler(isBertTrigger, bertPrimaryLogId);
+                    bertHandler(isBertTrigger, HOST_OFF);
                     isBertTrigger = false;
                 }
             }

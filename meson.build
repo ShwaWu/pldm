@@ -51,6 +51,15 @@ if get_option('oem-ibm').enabled()
   add_project_arguments('-DOEM_IBM', language : 'c')
   add_project_arguments('-DOEM_IBM', language : 'cpp')
 endif
+if get_option('ampere').enabled()
+  add_project_arguments('-DAMPERE', language : 'c')
+  add_project_arguments('-DAMPERE', language : 'cpp')
+  conf_data.set('BERT_HOSTOFF_TIMEOUT', get_option('ampere-bert-hostoff-timer'))
+  conf_data.set('BERT_HOSTON_TIMEOUT', get_option('ampere-bert-hoston-timer'))
+  conf_data.set('BERT_HOSTFAIL_TIMEOUT', get_option('ampere-bert-hostfail-timer'))
+  conf_data.set('BERT_CLAIMSPI_TIMEOUT', get_option('ampere-bert-claim-spi-timer'))
+  conf_data.set_quoted('HANDSHAKE_SPI_SCRIPT', get_option('ampere-handshake-spi-script'))
+endif
 conf_data.set('NUMBER_OF_REQUEST_RETRIES', get_option('number-of-request-retries'))
 conf_data.set('INSTANCE_ID_EXPIRATION_INTERVAL',get_option('instance-id-expiration-interval'))
 conf_data.set('RESPONSE_TIME_OUT',get_option('response-time-out'))
@@ -61,8 +70,8 @@ conf_data.set('POLL_SENSOR_TIMER_INTERVAL', get_option('poll-sensor-timer-interv
 conf_data.set('NORMAL_RAS_EVENT_TIMER',get_option('normal-ras-event-timer'))
 conf_data.set('CRITICAL_RAS_EVENT_TIMER',get_option('critical-ras-event-timer'))
 conf_data.set('POLL_REQ_EVENT_TIMER',get_option('poll-req-event-timer'))
-conf_data.set_quoted('FAULT_LOG_PATH', get_option('fault_log_path'),
-                      description : 'File system path containing Fault logs')
+conf_data.set_quoted('CPER_LOG_PATH', get_option('cper-log-path'))
+conf_data.set_quoted('CRASHDUMP_LOG_PATH', get_option('crashdump-log-path'))
 conf_data.set('MAXIMUM_TRANSFER_SIZE', get_option('maximum-transfer-size'))
 conf_data.set_quoted('EID_TO_NAME_JSON', join_paths(package_datadir, 'eid_to_name.json'))
 configure_file(output: 'config.h',
@@ -99,9 +108,11 @@ else
   )
 endif
 
-# Include libspinorfs as a static library.
+# Include libspinorfs as a static library, compiled with `make`.
 libspinorfs_dir = meson.current_source_dir() + '../recipe-sysroot/usr/lib'
 libspinorfs_dep = cpp.find_library('libspinorfs', dirs : libspinorfs_dir)
+#libspinorfs_dep = dependency('libspinorfs')
+
 
 if get_option('oe-sdk').enabled()
   # Setup OE SYSROOT

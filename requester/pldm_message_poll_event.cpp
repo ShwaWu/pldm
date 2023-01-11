@@ -25,7 +25,7 @@
 #include "bert.hpp"
 
 #undef DEBUG
-#define OEM_EVENT               0xaa
+#define OEM_EVENT               0xFA
 #define SENSOR_TYPE_OEM         0xF0
 
 #define CPER_FORMAT_TYPE        0

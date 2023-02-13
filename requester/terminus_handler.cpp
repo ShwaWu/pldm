@@ -1187,7 +1187,7 @@ void TerminusHandler::createCompactNummericSensorIntf(const PDRList& sensorPDRs)
     std::vector<uint16_t> _addedSensorId;
     for (const auto& sensorPDR : sensorPDRs)
     {
-        auto pdr = reinterpret_cast<const pldm_compact_nummeric_sensor_pdr*>(
+        auto pdr = reinterpret_cast<const pldm_compact_numeric_sensor_pdr*>(
             sensorPDR.data());
 
         auto it = std::find(_addedSensorId.begin(), _addedSensorId.end(),

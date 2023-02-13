@@ -1045,8 +1045,8 @@ class GetPDR : public CommandInterface
 
     void printCompactNumericSensorPDR(const uint8_t* data, ordered_json& output)
     {
-        struct pldm_compact_nummeric_sensor_pdr* pdr =
-            (struct pldm_compact_nummeric_sensor_pdr*)data;
+        struct pldm_compact_numeric_sensor_pdr* pdr =
+            (struct pldm_compact_numeric_sensor_pdr*)data;
         if (!pdr)
         {
             std::cerr << "Failed to get compact numeric sensor PDR"

@@ -349,7 +349,7 @@ void EventHandlerInterface::pollEventReqCb()
     }
 
     rc = handler->registerRequest(
-        eid, instanceId, PLDM_PLATFORM, PLDM_POLL_FOR_EVENT_MESSAGE,
+        eid, instanceId, PLDM_PLATFORM, PLDM_POLL_FOR_PLATFORM_EVENT_MESSAGE,
         std::move(requestMsg),
         std::move(
             std::bind_front(&EventHandlerInterface::processResponseMsg, this)));

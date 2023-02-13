@@ -797,84 +797,52 @@ class GetPDR : public CommandInterface
         }
     }
 
-    size_t getEffecterNameLanguageTag(const uint8_t* ptr,
-        std::string *languageTag)
-    {
-        std::string lang = "";
-        while (*ptr != 0)
-        {
-            lang.push_back(*ptr);
-            ptr++;
-        }
-        *languageTag = lang;
-
-        return lang.length() + 1;
-    }
-
-    size_t getEffterStringName(const uint8_t* ptr,
-        std::string *name)
-    {
-        std::string nameStr = "";
-        uint8_t lsb = *ptr;
-        ptr ++;
-        uint8_t msb = *ptr;
-        while (((msb << 8) + lsb) != 0)
-        {
-            nameStr.push_back((msb << 8) + lsb);
-            ptr ++;
-            lsb = *ptr;
-            ptr ++;
-            msb = *ptr;
-        }
-        *name = nameStr;
-
-        return 2*(nameStr.length() + 1);
-    }
-
     void printEffecterAuxNamePDR(uint8_t* data, ordered_json& output)
     {
-        auto p = data;
-        auto pdr = reinterpret_cast<const pldm_effecter_aux_name_pdr*>(data);
-        if (!pdr)
+        /* DSP0248 Table1 PLDM monitoring and control data types */
+        #define PLDM_STR_UTF_8_MAX_LEN 256
+        #define PLDM_STR_UTF_16_MAX_LEN 256
+        constexpr uint8_t nullTerminator = 0;
+        struct pldm_effecter_aux_name_pdr* auxNamePdr =
+            (struct pldm_effecter_aux_name_pdr*)data;
+        if (!auxNamePdr)
         {
-            std::cerr << "Failed to get effecter Aux Name PDR" << std::endl;
+            std::cerr << "Failed to get sensor Aux Name PDR" << std::endl;
             return;
         }
-        output["terminusHandle"] = int(pdr->terminus_handle);
-        output["sensorId"] = int(pdr->effecter_id);
-        output["sensorCount"] = int(pdr->effecter_count);
+        output["terminusHandle"] = int(auxNamePdr->terminus_handle);
+        output["sensorId"] = int(auxNamePdr->effecter_id);
+        output["sensorCount"] = int(auxNamePdr->effecter_count);
 
-        p += sizeof(pldm_effecter_aux_name_pdr) - sizeof(pldm_effecter_name);
-        for (int j = 0; j < pdr->effecter_count; j++)
+        const uint8_t* ptr = auxNamePdr->effecter_names;
+        for (int i = 0; i < auxNamePdr->effecter_count; i++)
         {
-            std::vector<std::string> languageTags;
-            std::vector<std::string> names;
-
-            auto effecterName = reinterpret_cast<const pldm_effecter_name*>(p);
-            int name_count = effecterName->name_string_count;
-            p += sizeof(effecterName->name_string_count);
-            for (int i = 0; i < effecterName->name_string_count; i++)
+            const uint8_t nameStringCount = static_cast<uint8_t>(*ptr);
+            ptr += sizeof(uint8_t);
+            for (int j = 0; j < nameStringCount; j++)
             {
-                std::string languageTag = "";
-                std::string name = "";
-                auto languageTagSize = getEffecterNameLanguageTag(p, &languageTag);
-                p += languageTagSize;
-
-                auto nameSize = getEffterStringName(p, &name);
-                p += nameSize;
-                languageTags.push_back(languageTag);
-                names.push_back(name);
-            }
-            for (int i = 0; i < name_count; i++)
-            {
-                std::string nameLanguageTag = "sensor" + std::to_string(j) +
+                std::string nameLanguageTagKey = "sensor" + std::to_string(j) +
                                               "_nameLanguageTag" +
                                               std::to_string(i);
-                std::string entityAuxName = "sensor" + std::to_string(j) +
+                std::string entityAuxNameKey = "sensor" + std::to_string(j) +
                                             "_entityAuxName" +
                                             std::to_string(i);
-                output[nameLanguageTag] = languageTags[i];
-                output[entityAuxName] = names[i];
+                std::string nameLanguageTag(reinterpret_cast<const char*>(ptr), 0,
+                                            PLDM_STR_UTF_8_MAX_LEN);
+                ptr += nameLanguageTag.size() + sizeof(nullTerminator);
+                std::u16string u16NameString(reinterpret_cast<const char16_t*>(ptr),
+                                            0, PLDM_STR_UTF_16_MAX_LEN);
+                ptr += (u16NameString.size() + sizeof(nullTerminator)) *
+                    sizeof(uint16_t);
+                std::transform(u16NameString.cbegin(), u16NameString.cend(),
+                            u16NameString.begin(),
+                            [](uint16_t utf16) { return le16toh(utf16); });
+                std::string nameString =
+                    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>,
+                                        char16_t>{}
+                        .to_bytes(u16NameString);
+                output[nameLanguageTagKey] = nameLanguageTag;
+                output[entityAuxNameKey] = nameString;
             }
         }
     }
@@ -1190,6 +1158,7 @@ class GetPDR : public CommandInterface
                 printNumericEffecterPDR(data, output);
                 break;
             case PLDM_EFFECTER_AUXILIARY_NAMES_PDR:
+            case PLDM_SENSOR_AUXILIARY_NAMES_PDR:
                 printEffecterAuxNamePDR(data, output);
                 break;
             case PLDM_STATE_EFFECTER_PDR:

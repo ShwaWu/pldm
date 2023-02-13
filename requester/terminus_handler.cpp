@@ -1439,96 +1439,62 @@ void TerminusHandler::createNummericEffecterDBusIntf(const PDRList& sensorPDRs)
     return;
 }
 
-size_t getEffecterNameLanguageTag(const uint8_t* ptr,
-    std::string *languageTag)
+void TerminusHandler::parseSensorAuxiliaryNamesPDR(const std::vector<uint8_t>& pdrData)
 {
-    std::string lang = "";
-    while (*ptr != 0)
+    constexpr uint8_t nullTerminator = 0;
+    auto pdr = reinterpret_cast<const struct pldm_effecter_aux_name_pdr*>(
+        pdrData.data());
+    const uint8_t* ptr = pdr->effecter_names;
+    auxNameSensorMapping sensorAuxNames{};
+    auto key = std::make_tuple(pdr->terminus_handle, pdr->effecter_id);
+    for (int i = 0; i < pdr->effecter_count; i++)
     {
-        lang.push_back(*ptr);
-        ptr++;
+        const uint8_t nameStringCount = static_cast<uint8_t>(*ptr);
+        ptr += sizeof(uint8_t);
+        auxNameList nameStrings{};
+        for (int j = 0; j < nameStringCount; j++)
+        {
+            std::string nameLanguageTag(reinterpret_cast<const char*>(ptr), 0,
+                                        PLDM_STR_UTF_8_MAX_LEN);
+            ptr += nameLanguageTag.size() + sizeof(nullTerminator);
+            std::u16string u16NameString(reinterpret_cast<const char16_t*>(ptr),
+                                         0, PLDM_STR_UTF_16_MAX_LEN);
+            ptr += (u16NameString.size() + sizeof(nullTerminator)) *
+                   sizeof(uint16_t);
+            std::transform(u16NameString.cbegin(), u16NameString.cend(),
+                           u16NameString.begin(),
+                           [](uint16_t utf16) { return be16toh(utf16); });
+            std::string nameString =
+                std::wstring_convert<std::codecvt_utf8_utf16<char16_t>,
+                                     char16_t>{}
+                    .to_bytes(u16NameString);
+            nameStrings.emplace_back(
+                std::make_tuple(nameLanguageTag, nameString));
+        }
+        sensorAuxNames.emplace_back(nameStrings);
     }
-    *languageTag = lang;
-
-    return lang.length() + 1;
-}
-
-size_t getEffterStringName(const uint8_t* ptr,
-    std::string *name)
-{
-    std::string nameStr = "";
-    uint8_t lsb = *ptr;
-    ptr ++;
-    uint8_t msb = *ptr;
-    while (((msb << 8) + lsb) != 0)
+    if (!sensorAuxNames.size())
     {
-        nameStr.push_back((msb << 8) + lsb);
-        ptr ++;
-        lsb = *ptr;
-        ptr ++;
-        msb = *ptr;
+        std::cerr << "Failed to find Aux Name of sensor Key " << get<0>(key)
+                    << ":" << get<1>(key) << "in mapping table." << std::endl;
+        return;
     }
-    *name = nameStr;
+    if (_auxNameMaps.find(key) != _auxNameMaps.end())
+    {
+        std::cerr << "Aux Name Key : " << get<0>(key) << ":" << get<1>(key)
+                    << " existed in mapping table." << std::endl;
+        return;
+    }
+    _auxNameMaps[key] = sensorAuxNames;
 
-    return 2*(nameStr.length() + 1);
+    return;
 }
 
 void TerminusHandler::parseAuxNamePDRs(const PDRList& sensorPDRs)
 {
     for (const auto& sensorPDR : sensorPDRs)
     {
-
-        auto p = sensorPDR.data();
-        auto pdr =
-            reinterpret_cast<const pldm_effecter_aux_name_pdr*>(sensorPDR.data());
-        if (!pdr)
-        {
-            std::cerr << "Failed to get Aux Name PDR" << std::endl;
-            return;
-        }
-
-        p += sizeof(pldm_effecter_aux_name_pdr) - sizeof(pldm_effecter_name);
-        auto key = std::make_tuple(pdr->terminus_handle, pdr->effecter_id);
-        auxNameSensorMapping sensorNameMapping;
-        for (int i = 0; i < pdr->effecter_count; i++)
-        {
-            auxNameList nameLists;
-            auto effecterName = reinterpret_cast<const pldm_effecter_name*>(p);
-
-            p += sizeof(effecterName->name_string_count);
-            for (int j = 0; j < effecterName->name_string_count; j++)
-            {
-                std::string languageTag = "";
-                std::string name = "";
-                auto languageTagSize = getEffecterNameLanguageTag(p, &languageTag);
-                p += languageTagSize;
-
-                auto nameSize = getEffterStringName(p, &name);
-                p += nameSize;
-
-                nameLists.emplace_back(std::make_tuple(languageTag, name));
-                std::cerr << "Add \"" << languageTag << "\":\"" << name
-                          << "\" to effecter aux name lists" << std::endl;
-            }
-            if (!nameLists.size())
-            {
-                continue;
-            }
-            sensorNameMapping.emplace_back(nameLists);
-        }
-        if (!sensorNameMapping.size())
-        {
-            std::cerr << "Failed to find Aux Name of sensor Key " << get<0>(key)
-                      << ":" << get<1>(key) << "in mapping table." << std::endl;
-            continue;
-        }
-        if (_auxNameMaps.find(key) != _auxNameMaps.end())
-        {
-            std::cerr << "Aux Name Key : " << get<0>(key) << ":" << get<1>(key)
-                      << " existed in mapping table." << std::endl;
-            continue;
-        }
-        _auxNameMaps[key] = sensorNameMapping;
+        parseSensorAuxiliaryNamesPDR(sensorPDR);
     }
     return;
 }

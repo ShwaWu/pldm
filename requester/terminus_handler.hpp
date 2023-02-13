@@ -167,11 +167,16 @@ class TerminusHandler
     void stopTerminusHandler();
 
   private:
+    /* DSP0248 Table1 PLDM monitoring and control data types */
+    #define PLDM_STR_UTF_8_MAX_LEN 256
+    #define PLDM_STR_UTF_16_MAX_LEN 256
+
     using mapped_type = std::tuple<uint16_t, ObjectInfo>;
     /* sensor_key tuple of eid, sensorId, pdr_type */
     using sensor_key = std::tuple<uint8_t, uint16_t, uint8_t>;
     using SensorState = std::map<sensor_key, mapped_type>;
-
+    using NameLanguageTag = std::string;
+    using SensorName = std::string;
     /* aux_name_key is pair of handler and sensorId */
     using auxNameKey = std::tuple<uint16_t, uint16_t>;
     /* names list of one state/effecter sensor */
@@ -277,6 +282,8 @@ class TerminusHandler
      *
      */
     void createNummericEffecterDBusIntf(const PDRList& effecterPDRs);
+
+    void parseSensorAuxiliaryNamesPDR(const std::vector<uint8_t>& pdrData);
 
     /** @brief Parse aux name PDRs and populate the aux name mapping
      *         lookup data structure

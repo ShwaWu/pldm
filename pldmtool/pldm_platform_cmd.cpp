@@ -836,7 +836,7 @@ class GetPDR : public CommandInterface
                     sizeof(uint16_t);
                 std::transform(u16NameString.cbegin(), u16NameString.cend(),
                             u16NameString.begin(),
-                            [](uint16_t utf16) { return le16toh(utf16); });
+                            [](uint16_t utf16) { return be16toh(utf16); });
                 std::string nameString =
                     std::wstring_convert<std::codecvt_utf8_utf16<char16_t>,
                                         char16_t>{}

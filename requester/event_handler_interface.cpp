@@ -236,20 +236,6 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
         return;
     }
 
-    // drop if response eventId doesn't match with request eventId
-    if ((reqData.eventIdToAck != 0x0) && (retEventId != reqData.eventIdToAck))
-    {
-#ifdef DEBUG
-        std::cerr << "WARNING: RESPONSED EVENT_ID DOESN'T MATCH WITH QUEUING\n"
-                  << "Recv EvenID=" << std::hex << retEventId
-                  << "Req EvenID=" << std::hex << reqData.eventIdToAck
-                  << "\n";
-#endif
-        reset();
-        return;
-    }
-
-
     // found
     int flag = static_cast<int>(retTransferFlag);
 
@@ -260,7 +246,7 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
         recvData.totalSize += retEventDataSize;
         reqData.operationFlag = PLDM_GET_NEXTPART;
         reqData.dataTransferHandle = retNextDataTransferHandle;
-        reqData.eventIdToAck = retEventId;
+        reqData.eventIdToAck = 0xffff;
     }
     else if (flag == PLDM_MIDDLE)       /* Middle part */
     {
@@ -269,7 +255,7 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
         recvData.totalSize += retEventDataSize;
         reqData.operationFlag = PLDM_GET_NEXTPART;
         reqData.dataTransferHandle = retNextDataTransferHandle;
-        reqData.eventIdToAck = retEventId;
+        reqData.eventIdToAck = 0xffff;
     }
     else if ((flag == PLDM_END) || (flag == PLDM_START_AND_END))  /* End part */
     {
@@ -322,9 +308,6 @@ void EventHandlerInterface::pollEventReqCb()
     auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
 
     if (isPolling)
-        return;
-
-    if (reqData.eventIdToAck == 0xffff)
         return;
 
 #ifdef DEBUG

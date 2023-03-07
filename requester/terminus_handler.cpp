@@ -1693,15 +1693,6 @@ void TerminusHandler::readSensor()
     {
         pollingSensors = false;
 
-        if (_effecterLists.size() > 0)
-        {
-            std::cerr << "Remove " << _effecterLists.size()
-                      << " effecter from  polling list after first read."
-                      << std::endl;
-            removeEffecterFromPollingList(std::move(_effecterLists));
-            _effecterLists.clear();
-        }
-
         if (debugPollSensor)
         {
             std::chrono::duration<double> elapsed_seconds =

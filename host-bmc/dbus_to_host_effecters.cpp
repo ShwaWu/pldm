@@ -342,8 +342,6 @@ void HostEffecterParser::processTerminusNumericEffecterChangeNotification(
     /* the value of numeric effecter in D-Bus interface is double */
     if (std::isnan(propValues.propertyValue) || std::isnan(val))
     {
-        std::cerr << " Bypass the first update of "
-                  << propValues.dbusMap.objectPath << std::endl;
         hostEffecterInfo[effecterInfoIndex]
             .dbusNumericEffecterInfo[dbusInfoIndex]
             .propertyValue = val;

@@ -217,7 +217,7 @@ std::shared_ptr<StatusObject> PldmSensor::addStatusInterface(ObjectInfo& info,
     try
     {
         iface = std::make_shared<StatusObject>(
-            bus, objPath.c_str(), StatusObject::action::emit_no_signals);
+            bus, objPath.c_str(), StatusObject::action::defer_emit);
         iface->functional(functional);
         obj[InterfaceType::STATUS] = iface;
     }

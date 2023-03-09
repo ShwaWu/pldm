@@ -143,7 +143,7 @@ std::shared_ptr<T> addThreshold(ObjectInfo& info, SensorValueType value,
     }
 
     iface =
-        std::make_shared<T>(bus, objPath.c_str(), T::action::emit_no_signals);
+        std::make_shared<T>(bus, objPath.c_str(), T::action::defer_emit);
 
     if (!std::isnan(lo))
     {

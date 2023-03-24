@@ -212,16 +212,6 @@ class HostEffecterParser
                                          uint16_t effecterId);
 
   private:
-    /* @brief Retrieve the value of D-Bus property
-     *
-     * @param[in] objectPath - D-Bus object path
-     * @param[in] interface - D-Bus interface
-     * @param[in] propertyName - D-Bus property name
-     *
-     * @return - Value of effecter
-     */
-    double getEffecterValue(std::string objectPath, std::string interface,
-                            std::string propertyName);
     /* @brief Adjust the nummeric effecter value base on the effecter
      *        configurations
      *

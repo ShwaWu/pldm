@@ -36,31 +36,6 @@ void HostEffecterParser::populatePropVals(
     }
 }
 
-double HostEffecterParser::getEffecterValue(std::string objectPath,
-                                            std::string interface,
-                                            std::string propertyName)
-{
-    try
-    {
-        auto service =
-            dbusHandler->getService(objectPath.c_str(), interface.c_str());
-        if (!service.empty())
-        {
-            auto propertyValue = dbusHandler->getDbusPropertyVariant(
-                objectPath.c_str(), propertyName.c_str(), interface.c_str());
-            return std::get<double>(propertyValue);
-        }
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Failed to get effecter value objectPath=" << objectPath
-                  << " interface=" << interface << " property=" << propertyName
-                  << std::endl;
-    }
-
-    return std::numeric_limits<double>::quiet_NaN();
-}
-
 void HostEffecterParser::parseEffecterJson(const std::string& jsonPath)
 {
     fs::path jsonDir(jsonPath);
@@ -197,20 +172,22 @@ void HostEffecterParser::parseEffecterJson(const std::string& jsonPath)
 
 bool HostEffecterParser::isHostOn(void)
 {
-    constexpr auto hostStateInterface =
+    constexpr auto bootProgressInterface =
         "xyz.openbmc_project.State.Boot.Progress";
     constexpr auto hostStatePath = "/xyz/openbmc_project/state/host0";
     try
     {
         auto propVal = dbusHandler->getDbusPropertyVariant(
-            hostStatePath, "BootProgress", hostStateInterface);
+            hostStatePath, "BootProgress", bootProgressInterface);
         const auto& currHostState = std::get<std::string>(propVal);
         if ((currHostState != "xyz.openbmc_project.State.Boot.Progress."
                               "ProgressStages.SystemInitComplete") &&
             (currHostState != "xyz.openbmc_project.State.Boot.Progress."
                               "ProgressStages.OSRunning") &&
             (currHostState != "xyz.openbmc_project.State.Boot.Progress."
-                              "ProgressStages.SystemSetup"))
+                              "ProgressStages.SystemSetup") &&
+            (currHostState != "xyz.openbmc_project.State.Boot.Progress."
+                              "ProgressStages.OEM"))
         {
             info("Host is not up. Current host state: {CUR_HOST_STATE}",
                  "CUR_HOST_STATE", currHostState.c_str());
@@ -338,12 +315,19 @@ void HostEffecterParser::processTerminusNumericEffecterChangeNotification(
     }
 
     double val = std::get<double>(it->second);
-    /* the value of numeric effecter in D-Bus interface is double */
-    if (std::isnan(propValues.propertyValue) || std::isnan(val))
+
+    /* Update the current value of D-Bus interface*/
+    if (!std::isnan(val) && std::isnan(propValues.propertyValue))
     {
         hostEffecterInfo[effecterInfoIndex]
             .dbusNumericEffecterInfo[dbusInfoIndex]
             .propertyValue = val;
+        return;
+    }
+
+    /* Bypass the setting when the current value is NA or settting value is NA*/
+    if (std::isnan(propValues.propertyValue) || std::isnan(val))
+    {
         return;
     }
 
@@ -353,6 +337,7 @@ void HostEffecterParser::processTerminusNumericEffecterChangeNotification(
                   << propValues.dbusMap.objectPath << std::endl;
         return;
     }
+
     double rawValue = adjustValue(val, propValues.offset, propValues.resolution,
                                   propValues.unitModifier);
 
@@ -378,6 +363,10 @@ void HostEffecterParser::processTerminusNumericEffecterChangeNotification(
         std::cerr << "Could not set the numeric effecter, ID=" << effecterId
                   << " rc= " << rc << std::endl;
     }
+
+    hostEffecterInfo[effecterInfoIndex]
+        .dbusNumericEffecterInfo[dbusInfoIndex]
+        .propertyValue = val;
 
     return;
 }

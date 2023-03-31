@@ -132,7 +132,7 @@ int bertHandler(bool isBertTrigger, std::string &primaryLogId)
     for (i = 0; i < BERT_MAX_NUM_FILE; i++)
     {
         if(!bertInfo.files[i].flags.member.valid ||
-           bertInfo.files[i].flags.member.pendingBMC)
+           !bertInfo.files[i].flags.member.pendingBMC)
             continue;
         /*
          * Valid bert header and BMC flag is not set imply a new
@@ -171,7 +171,7 @@ int bertHandler(bool isBertTrigger, std::string &primaryLogId)
         std::cerr << "sectionsValid = " << bertPayload->sectionsValid.reg << "\n";
 #endif
         bertDumpPathList.push_back(bertDumpPath);
-        /* Set BMC flag to 1 to indicated processed by BMC */
+        /* Set BMC flag to 0 to indicated processed by BMC */
         bertInfo.files[i].flags.member.pendingBMC = 0;
     }
 

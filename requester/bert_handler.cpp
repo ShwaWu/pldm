@@ -8,90 +8,73 @@
 #include <cstring>
 #include <unistd.h>
 #include <filesystem>
+#include <fcntl.h>
 
 extern "C"
 {
-#include "../libnvparm/gpt.h"
-#include "../libnvparm/spinor_func.h"
+#include <spinorfs.h>
 }
 
 #undef BERT_DEBUG
+
+#define PROC_MTD_INFO           "/proc/mtd"
+#define HOST_SPI_FLASH_MTD_NAME "hnor"
 
 std::string bertNvp = "ras-crash";
 std::string bertFileNvp = "latest.ras";
 std::string bertFileNvpInfo = "latest.dump";
 
-static int decodeBertPartitionInfo(std::string &inPath,
-                                   AmpereBertPartitionInfo *bertInfo)
+static int spinorfsRead(char *file, char *buff, uint32_t offset, uint32_t size)
 {
-    if (!bertInfo)
+    uint32_t val;
+
+    if (spinorfs_open(file, SPINORFS_O_RDONLY))
         return -1;
 
-    std::ifstream inNvpInfo (inPath.c_str(), std::ifstream::binary);
-    if(!inNvpInfo.is_open())
-    {
-        std::cerr << "Can not open ifstream for " << inPath.c_str() << "\n";
+    val = spinorfs_read(buff, offset, size);
+    spinorfs_close();
+    if (val != size)
         return -1;
-    }
-
-    inNvpInfo.read((char*) bertInfo,
-                   sizeof(AmpereBertPartitionInfo));
-
- #ifdef BERT_DEBUG
-    for (int i = 0; i < BERT_MAX_NUM_FILE; i++)
-    {
-        std::cerr << "BERT_PARTITION_INFO size = " <<
-                     bertInfo->files[i].size << "\n";
-        std::cerr << "BERT_PARTITION_INFO name = " <<
-                     bertInfo->files[i].name << "\n";
-        std::cerr << "BERT_PARTITION_INFO flags = " <<
-                             bertInfo->files[i].flags.reg << "\n";
-    }
-
-#endif
-
-    inNvpInfo.close();
-
-    return 0;
+    else
+        return 0;
 }
 
-[[maybe_unused]] static int decodeBertPayloadSection(std::string &inPath)
+static int spinorfsWrite(char *file, char *buff, uint32_t offset, uint32_t size)
 {
-    AmpereBertPayloadSection bertPayload;
-    std::ifstream inPayloadSec (inPath.c_str(), std::ifstream::binary);
-    if(!inPayloadSec.is_open())
-    {
-        std::cerr << "Can not open ifstream for payload section\n";
+    uint32_t val;
+
+    if (spinorfs_open(file, SPINORFS_O_WRONLY | SPINORFS_O_TRUNC))
         return -1;
-    }
-    inPayloadSec.read((char *) &bertPayload, sizeof(AmpereBertPayloadSection));
 
-#ifdef BERT_DEBUG
-    std::cerr << "firmwareVersion = " << bertPayload.firmwareVersion << "\n";
-    std::cerr << "totalBertLength = " << bertPayload.totalBertLength << "\n";
-    std::cerr << "sectionType = " << bertPayload.header.sectionType << "\n";
-    std::cerr << "sectionLength = " << bertPayload.header.sectionLength << "\n";
-    std::cerr << "sectionInstance = " << bertPayload.header.sectionInstance << "\n";
-    std::cerr << "sectionsValid = " << bertPayload.sectionsValid.reg << "\n";
-#endif
-    inPayloadSec.close();
+    val = spinorfs_write(buff, offset, size);
+    spinorfs_close();
 
-    return 0;
+    if (val != size)
+        return -1;
+    else
+        return 0;
 }
 
-static int updateBertParititionInfo(std::string &outPath,
-                             AmpereBertPartitionInfo *bertInfo)
+static int openSPINorDevice(int *fd)
 {
-    std::ofstream outNvpInfo (outPath.c_str(), std::ofstream::binary);
-    if(!outNvpInfo.is_open())
-    {
-        std::cerr << "Can not open ofstream for " << outPath.c_str() << "\n";
-        return -1;
-    }
-    outNvpInfo.write((char*) bertInfo, sizeof(AmpereBertPartitionInfo));
-    outNvpInfo.close();
+    std::ifstream mtdInfoStream;
+    std::string mtdDeviceStr;
 
-    return 0;
+    mtdInfoStream.open(PROC_MTD_INFO);
+    std::string line;
+    while (std::getline(mtdInfoStream, line))
+    {
+        std::cerr << "Get line: " << line.c_str() << "\n";
+        if (line.find(HOST_SPI_FLASH_MTD_NAME) != std::string::npos)
+        {
+            std::size_t pos = line.find(":");
+            mtdDeviceStr = line.substr(0,pos);
+            mtdDeviceStr = "/dev/" + mtdDeviceStr;
+            *fd = open(mtdDeviceStr.c_str(), O_SYNC | O_RDWR);
+            return 0;
+        }
+    }
+    return -1;
 }
 
 int bertHandler(bool isBertTrigger, std::string &primaryLogId)
@@ -101,47 +84,52 @@ int bertHandler(bool isBertTrigger, std::string &primaryLogId)
     uint32_t size = 0, offset = 0;
     std::vector<std::string> bertDumpPathList;
     std::string bertDumpPath;
+    AmpereBertPartitionInfo bertInfo;
+    uint8_t i;
 
     if (!isBertTrigger)
         return 0;
 
-    ret = find_host_mtd_partition(&devFd);
+    ret = openSPINorDevice(&devFd);
     if (ret) {
-        std::cerr << "Can not find spi partition\n";
-        return ret;
+        std::cerr << "Can not open SPINOR device\n";
+        return -1;
     }
-    ret = get_gpt_disk_info(devFd, SHOW_GPT_DISABLE);
+    ret = spinorfs_gpt_disk_info(devFd, 0);
     if (ret) {
         std::cerr << "Get GPT Info failure\n";
         return ret;
     }
-    ret = get_gpt_part_name_info((char*) bertNvp.c_str(), &offset, &size);
+    ret = spinorfs_gpt_part_name_info((char*) bertNvp.c_str(), &offset, &size);
     if (ret) {
         std::cerr << "Get GPT Partition Info failure\n";
         return ret;
     }
-    ret = spinor_lfs_mount(size, offset);
+    ret = spinorfs_mount(devFd, size, offset);
     if (ret) {
         std::cerr << "Mount Partition failure\n";
         return ret;
     }
 
-    std::string bertFileNvpInfoPath = std::string(BERT_LOG_DIR) + bertFileNvpInfo;
-    ret = spinor_lfs_dump_nvp((char*) bertFileNvp.c_str(),
-                              (char*) bertFileNvpInfoPath.c_str());
-    if (ret) {
+    ret = spinorfsRead((char*) bertFileNvp.c_str(),(char*) &bertInfo,
+                       0, sizeof(AmpereBertPartitionInfo));
+    if (ret < 0) {
         std::cerr << "Read " << bertFileNvp.c_str() << "failure\n";
+        spinorfs_unmount();
         return ret;
     }
-
-    AmpereBertPartitionInfo bertInfo;
-    ret = decodeBertPartitionInfo(bertFileNvpInfoPath, &bertInfo);
-    if (ret) {
-        std::cerr << "Decode Bert Partition Info failure\n";
-        return ret;
-    }
-
-    for (uint8_t i = 0; i < BERT_MAX_NUM_FILE; i++)
+#ifdef BERT_DEBUG
+   for (i = 0; i < BERT_MAX_NUM_FILE; i++)
+   {
+       std::cerr << "BERT_PARTITION_INFO size = " <<
+                    bertInfo.files[i].size << "\n";
+       std::cerr << "BERT_PARTITION_INFO name = " <<
+                    bertInfo.files[i].name << "\n";
+       std::cerr << "BERT_PARTITION_INFO flags = " <<
+                    bertInfo.files[i].flags.reg << "\n";
+   }
+#endif
+    for (i = 0; i < BERT_MAX_NUM_FILE; i++)
     {
         if(!bertInfo.files[i].flags.member.valid ||
            bertInfo.files[i].flags.member.pendingBMC)
@@ -152,24 +140,40 @@ int bertHandler(bool isBertTrigger, std::string &primaryLogId)
          */
         bertDumpPath = std::string(BERT_LOG_DIR) +
                        std::string(bertInfo.files[i].name);
-        ret = spinor_lfs_dump_nvp(bertInfo.files[i].name,
-                                  (char*) bertDumpPath.c_str());
-        if (!ret)
+        std::vector<char> crashBufVector(bertInfo.files[i].size, 0);
+        char *crashBuf = crashBufVector.data();
+        ret = spinorfsRead(bertInfo.files[i].name, crashBuf,
+                           0, bertInfo.files[i].size);
+
+        if (ret < 0)
         {
-            bertDumpPathList.push_back(bertDumpPath);
-            /* Set BMC flag to 1 to indicated processed by BMC */
-            bertInfo.files[i].flags.member.pendingBMC = 1;
+            std::cerr << "Read " << bertInfo.files[i].name << "failure\n";
+            continue;
         }
-    }
+        std::ofstream out (bertDumpPath.c_str(), std::ofstream::binary);
+        if(!out.is_open())
+        {
+            std::cerr << "Can not open ofstream for BERT binary file\n";
+            ret = -1;
+            spinorfs_unmount();
+            return ret;
+        }
+        out.write(crashBuf, bertInfo.files[i].size);
+        out.close();
 #ifdef BERT_DEBUG
-    for (uint8_t i = 0; i < bertDumpPathList.size(); i++)
-    {
-        ret = decodeBertPayloadSection(bertDumpPathList[i]);
-        if (ret) {
-            std::cerr << "Decode Bert Payload Section failure\n";
-        }
-    }
+        AmpereBertPayloadSection *bertPayload;
+        bertPayload = (AmpereBertPayloadSection *) crashBuf;
+        std::cerr << "firmwareVersion = " << bertPayload->firmwareVersion << "\n";
+        std::cerr << "totalBertLength = " << bertPayload->totalBertLength << "\n";
+        std::cerr << "sectionType = " << bertPayload->header.sectionType << "\n";
+        std::cerr << "sectionLength = " << bertPayload->header.sectionLength << "\n";
+        std::cerr << "sectionInstance = " << bertPayload->header.sectionInstance << "\n";
+        std::cerr << "sectionsValid = " << bertPayload->sectionsValid.reg << "\n";
 #endif
+        bertDumpPathList.push_back(bertDumpPath);
+        /* Set BMC flag to 1 to indicated processed by BMC */
+        bertInfo.files[i].flags.member.pendingBMC = 0;
+    }
 
     /* Copy BERT data from SPI to FaultLog location for Redfish
      * Only use BERT payload 0(crash_0). Need to consider how retrieve more BERT
@@ -180,15 +184,16 @@ int bertHandler(bool isBertTrigger, std::string &primaryLogId)
             std::filesystem::copy_options::overwrite_existing);
 
     /* Write back to BERT file info to indicate BMC consumed BERT record */
-    updateBertParititionInfo(bertFileNvpInfoPath, &bertInfo);
-    ret = spinor_lfs_upload_nvp((char*) bertFileNvp.c_str(),
-                                (char*) bertFileNvpInfoPath.c_str());
-    if (ret) {
+    ret = spinorfsWrite((char*) bertFileNvp.c_str(), (char*) &bertInfo,
+                        0, sizeof(AmpereBertPartitionInfo));
+    if (ret < 0) {
         std::cerr << "Update " << bertFileNvp.c_str() << "failure\n";
+        spinorfs_unmount();
         return ret;
     }
 
     std::filesystem::remove_all(BERT_LOG_DIR);
+    spinorfs_unmount();
     close(devFd);
     return ret;
 }

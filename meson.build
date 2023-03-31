@@ -99,9 +99,9 @@ else
   )
 endif
 
-# Include libnvparm as a static library, compiled with `make`.
-libnvparm_dir = meson.current_source_dir() + '/libnvparm/'
-libnvparm_dep = cpp.find_library('nvparm', dirs : libnvparm_dir)
+# Include libspinorfs as a static library.
+libspinorfs_dir = meson.current_source_dir() + '../recipe-sysroot/usr/lib'
+libspinorfs_dep = cpp.find_library('libspinorfs', dirs : libspinorfs_dir)
 
 if get_option('oe-sdk').enabled()
   # Setup OE SYSROOT
@@ -171,7 +171,7 @@ deps = [
   sdbusplus,
   sdeventplus,
   stdplus,
-  libnvparm_dep,
+  libspinorfs_dep,
 ]
 
 if get_option('libpldmresponder').enabled()

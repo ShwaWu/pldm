@@ -29,6 +29,12 @@ class NumericSensorHanler
   private:
     void handleDbusEventSignalMatch();
 
+    void handleBootOverallEvent([[maybe_unused]]uint8_t tid,
+                [[maybe_unused]]uint16_t sensorId, uint32_t presentReading);
+
+    void handlePCIeHotPlugEvent(uint8_t tid, [[maybe_unused]]uint16_t sensorId,
+                uint32_t presentReading);
+
     void addJournalRecord(const std::string& message, std::uint8_t tid,
                           std::uint16_t sensorId, std::uint8_t eventState,
                           std::uint8_t preEventState, uint8_t sensorDataSize,

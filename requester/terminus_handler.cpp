@@ -1957,6 +1957,16 @@ void TerminusHandler::stopTerminusHandler()
     continuePollSensor = false;
 }
 
+void TerminusHandler::addEventMsg(uint8_t tid, uint8_t eventId,
+                                  uint8_t eventType, uint8_t eventClass)
+{
+    if (tid != devInfo.tid)
+        return;
+
+    if (eventDataHndl)
+        eventDataHndl->addEventMsg(eventId, eventType, eventClass);
+}
+
 } // namespace terminus
 
 } // namespace pldm

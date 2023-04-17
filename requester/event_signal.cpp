@@ -1,4 +1,6 @@
-#include "numeric_sensor_state.hpp"
+#include "event_signal.hpp"
+#include "common/types.hpp"
+#include "common/utils.hpp"
 #include "bert.hpp"
 
 #include <sdeventplus/event.hpp>
@@ -8,12 +10,13 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <libpldm/pldm.h>
+#include <algorithm>
+#include <map>
+#include <string_view>
+#include <vector>
 
 namespace pldm
-{
-namespace events
-{
-namespace sensors
 {
 
 typedef struct
@@ -23,7 +26,6 @@ typedef struct
     std::string failStt;
 } sensorDescription;
 
-static std::unique_ptr<sdbusplus::bus::match_t> pldmNumericSensorEventSignal;
 std::unordered_map<uint8_t, sensorDescription> numericNormalSensorDesTbl = {
     {0x90, {"SECpro booting", "SECpro completed", "SECpro boot failed"}},
     {0x91, {"Mpro booting", "Mpro completed", "Mpro boot failed"}},
@@ -35,12 +37,53 @@ std::unordered_map<uint8_t, sensorDescription> numericNormalSensorDesTbl = {
     {0x97, {"ATF BL31 booting", "ATF BL31 completed", "ATF BL31 boot failed"}},
     {0x98, {"ATF BL32 booting", "ATF BL32 completed", "ATF BL32 boot failed"}}};
 
-NumericSensorHanler::NumericSensorHanler()
+
+void PldmDbusEventSignal::PldmMessagePollEventSignal()
 {
-    handleDbusEventSignalMatch();
+    pldmMessagePollEventSignal = std::make_unique<sdbusplus::bus::match_t>(
+         pldm::utils::DBusHandler::getBus(),
+         sdbusplus::bus::match::rules::type::signal() +
+             sdbusplus::bus::match::rules::member("PldmMessagePollEvent") +
+             sdbusplus::bus::match::rules::path("/xyz/openbmc_project/pldm") +
+             sdbusplus::bus::match::rules::interface(
+                 "xyz.openbmc_project.PLDM.Event"),
+         [&](sdbusplus::message::message& msg) {
+             try
+             {
+                 uint8_t msgTID{};
+                 uint8_t msgEventClass{};
+                 uint8_t msgFormatVersion{};
+                 uint16_t msgEventID{};
+                 uint32_t msgEventDataTransferHandle{};
+
+                 // Read the msg and populate each variable
+                 msg.read(msgTID, msgEventClass, msgFormatVersion, msgEventID,
+                          msgEventDataTransferHandle);
+ #ifdef DEBUG
+                 std::cout << "\n->Coming DBUS Event Signal\n"
+                           << "TID: " << std::hex << (unsigned)msgTID << "\n"
+                           << "msgEventClass: " << std::hex
+                           << (unsigned)msgEventClass << "\n"
+                           << "msgFormatVersion: " << std::hex
+                           << (unsigned)msgFormatVersion << "\n"
+                           << "msgEventID: " << std::hex << msgEventID << "\n"
+                           << "msgEventDataTransferHandle: " << std::hex
+                           << msgEventDataTransferHandle << "\n";
+ #endif
+                 // add the priority
+                 if (devManager)
+                     devManager->addEventMsg(msgTID, msgEventID, PLDM_MESSAGE_POLL_EVENT,
+                                      0);
+             }
+             catch (const std::exception& e)
+             {
+                 std::cerr << "subscribePldmDbusEventSignal failed\n"
+                           << e.what() << std::endl;
+             }
+         });
 }
 
-void NumericSensorHanler::handleBootOverallEvent([[maybe_unused]]uint8_t tid,
+void PldmDbusEventSignal::handleBootOverallEvent([[maybe_unused]]uint8_t tid,
                 [[maybe_unused]]uint16_t sensorId, uint32_t presentReading)
 {
     bool failFlg = false;
@@ -173,7 +216,7 @@ void NumericSensorHanler::handleBootOverallEvent([[maybe_unused]]uint8_t tid,
     }
 }
 
-void NumericSensorHanler::handlePCIeHotPlugEvent(uint8_t tid,
+void PldmDbusEventSignal::handlePCIeHotPlugEvent(uint8_t tid,
                 [[maybe_unused]]uint16_t sensorId, uint32_t presentReading)
 {
     /*
@@ -236,7 +279,7 @@ void NumericSensorHanler::handlePCIeHotPlugEvent(uint8_t tid,
     }
 }
 
-void NumericSensorHanler::handleDbusEventSignalMatch()
+void PldmDbusEventSignal::PldmNumericSensorEventSignal()
 {
     pldmNumericSensorEventSignal = std::make_unique<sdbusplus::bus::match_t>(
         pldm::utils::DBusHandler::getBus(),
@@ -261,6 +304,13 @@ void NumericSensorHanler::handleDbusEventSignalMatch()
                 msg.read(tid, sensorId, eventState, preEventState,
                          sensorDataSize, presentReading);
 
+                if ((sensorId >= 191) && (sensorId <= 198))
+                {
+                    if (devManager)
+                        devManager->addEventMsg(tid, sensorId, PLDM_SENSOR_EVENT,
+                                         PLDM_NUMERIC_SENSOR_STATE);
+                }
+
                 /*
                  * Handle Overall sensor
                  */
@@ -280,6 +330,12 @@ void NumericSensorHanler::handleDbusEventSignalMatch()
             }
         });
 }
-} // namespace sensors
-} // namespace events
-} // namespace pldm
+
+PldmDbusEventSignal::PldmDbusEventSignal(
+        terminus::Manager *dev): devManager(dev)
+{
+    PldmMessagePollEventSignal();
+    PldmNumericSensorEventSignal();
+}
+
+}

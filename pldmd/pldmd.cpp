@@ -8,6 +8,7 @@
 #include "requester/mctp_endpoint_discovery.hpp"
 #include "requester/request.hpp"
 #include "requester/terminus_manager.hpp"
+#include "requester/event_signal.hpp"
 #ifdef AMPERE
 #include "requester/bert.hpp"
 #endif
@@ -325,6 +326,8 @@ int main(int argc, char** argv)
     std::unique_ptr<MctpDiscovery> mctpDiscoveryHandler =
         std::make_unique<MctpDiscovery>(bus, fwManager.get(), devManager.get());
 
+    std::unique_ptr<PldmDbusEventSignal> eventSignal =
+        std::make_unique<PldmDbusEventSignal>(devManager.get());
 #ifdef AMPERE
     handleBertHostOffEvent();
 #endif

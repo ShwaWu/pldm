@@ -45,6 +45,7 @@ class PldmMessagePollEvent : public EventHandlerInterface
     int pldmPollForEventMessage(uint8_t TID, uint8_t eventClass,
                                 uint16_t eventID, std::vector<uint8_t> data);
 
+    /* Should be remove when moving BERT to standalone application */
     void handlePldmDbusEventSignal();
 
     int msgPriority = 5; // notice

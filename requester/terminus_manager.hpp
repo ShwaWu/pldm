@@ -110,6 +110,16 @@ class Manager
         return;
     }
 
+    void addEventMsg(uint8_t tid, uint8_t eventId, uint8_t eventType,
+                     uint8_t eventClass)
+    {
+        for ( auto it = mDevices.begin(); it != mDevices.end(); ++it  )
+        {
+            auto secondPtr = it->second.get();
+            secondPtr->addEventMsg(tid, eventId, eventType, eventClass);
+        }
+    }
+
   private:
     /** @brief reference of main D-bus interface of pldmd devices */
     sdbusplus::bus::bus& bus;

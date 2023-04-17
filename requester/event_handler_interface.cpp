@@ -385,4 +385,18 @@ void EventHandlerInterface::stopCallback()
     }
 }
 
+void EventHandlerInterface::addEventMsg(uint8_t eventId, uint8_t eventType,
+                                        uint8_t eventClass)
+{
+    if (eventType == PLDM_MESSAGE_POLL_EVENT)
+        enqueueCriticalEvent(eventId);
+    if ((eventType == PLDM_SENSOR_EVENT) &&
+        (eventClass == PLDM_NUMERIC_SENSOR_STATE))
+    {
+        // add the priority
+        std::cerr << "Overflow: " << eventId << "\n";
+        enqueueOverflowEvent(eventId);
+    }
+}
+
 } // namespace pldm

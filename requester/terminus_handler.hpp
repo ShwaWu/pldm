@@ -170,6 +170,19 @@ class TerminusHandler
      */
     void stopTerminusHandler();
 
+    /** @brief Add received event message to terminus handler
+     *
+     *  @param[in] tid - Terminus ID
+     *  @param[in] eventID - Event ID
+     *  @param[in] eventType - type of event
+     *  @param[in] eventClass - Event Class of sensor event
+     *
+     *  @return - none
+     *
+     */
+    void addEventMsg(uint8_t tid, uint8_t eventId, uint8_t eventType,
+                     uint8_t eventClass);
+
   private:
     /* DSP0248 Table1 PLDM monitoring and control data types */
     #define PLDM_STR_UTF_8_MAX_LEN 256

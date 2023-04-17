@@ -10,6 +10,7 @@
 #include "requester/mctp_endpoint_discovery.hpp"
 #include "requester/request.hpp"
 #include "requester/terminus_manager.hpp"
+#include "requester/event_signal.hpp"
 #ifdef AMPERE
 #include "requester/bert.hpp"
 #endif

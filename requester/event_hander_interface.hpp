@@ -42,6 +42,7 @@ class EventHandlerInterface
     int enqueueOverflowEvent(uint16_t item);
     void startCallback();
     void stopCallback();
+    void addEventMsg(uint8_t eventId, uint8_t eventType, uint8_t eventClass);
 
   private:
     std::size_t MAX_QUEUE_SIZE = 256;

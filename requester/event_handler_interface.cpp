@@ -393,12 +393,9 @@ void EventHandlerInterface::addEventMsg(uint8_t eventId, uint8_t eventType,
     if ((eventType == PLDM_SENSOR_EVENT) &&
         (eventClass == PLDM_NUMERIC_SENSOR_STATE))
     {
-        if ((eventId >= 191) && (eventId <= 198) )
-        {
-            // add the priority
-            std::cerr << "Overflow: " << eventId << "\n";
-            enqueueOverflowEvent(eventId);
-        }
+        // add the priority
+        std::cerr << "Overflow: " << eventId << "\n";
+        enqueueOverflowEvent(eventId);
     }
 }
 

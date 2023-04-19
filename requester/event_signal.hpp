@@ -18,9 +18,19 @@ class PldmDbusEventSignal
     ~PldmDbusEventSignal() = default;
 
     explicit PldmDbusEventSignal(terminus::Manager *dev);
+
+    void PldmMessagePollEventSignal();
+    void PldmNumericSensorEventSignal();
+    void handleBootOverallEvent([[maybe_unused]]uint8_t tid,
+                [[maybe_unused]]uint16_t sensorId, uint32_t presentReading);
+    void handlePCIeHotPlugEvent(uint8_t tid, [[maybe_unused]]uint16_t sensorId,
+                uint32_t presentReading);
+
   private:
-    std::unique_ptr<sdbusplus::bus::match_t> pldmEventSignal;
+
+    std::unique_ptr<sdbusplus::bus::match_t> pldmMessagePollEventSignal;
     std::unique_ptr<sdbusplus::bus::match_t> pldmNumericSensorEventSignal;
+    terminus::Manager *devManager;
 };
 
 

@@ -211,7 +211,6 @@ executable(
   'requester/event_signal.cpp',
   'requester/cper.cpp',
   'requester/bert_handler.cpp',
-  'requester/numeric_sensor_state.cpp',
   'sensors/pldm_sensor.cpp',
   'sensors/hwmon.cpp',
   implicit_include_directories: false,

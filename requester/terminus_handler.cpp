@@ -133,15 +133,6 @@ requester::Coroutine TerminusHandler::discoveryTerminus()
         }
     }
 
-    if (supportPLDMType(PLDM_PLATFORM))
-    {
-        rc = co_await setEventReceiver();
-        if (rc)
-        {
-            std::cerr << "Failed to setEventReceiver, rc=" << unsigned(rc)
-                      << std::endl;
-        }
-    }
     /* Check whether the terminus is removed when discoverying */
     if (stopTerminusPolling)
     {
@@ -191,6 +182,16 @@ requester::Coroutine TerminusHandler::discoveryTerminus()
                 createdDbusObject = true;
             }
             updateSensorKeys();
+        }
+    }
+
+    if (supportPLDMType(PLDM_PLATFORM))
+    {
+        rc = co_await setEventReceiver();
+        if (rc)
+        {
+            std::cerr << "Failed to setEventReceiver, rc=" << unsigned(rc)
+                      << std::endl;
         }
     }
 

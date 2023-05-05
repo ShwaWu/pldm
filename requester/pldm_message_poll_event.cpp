@@ -13,6 +13,7 @@
 #include <sdeventplus/exception.hpp>
 #include <sdeventplus/source/io.hpp>
 #include <sdeventplus/source/time.hpp>
+#include "com/ampere/CrashCapture/Trigger/server.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -23,11 +24,9 @@
 #include <filesystem>
 #include <cstring>
 #include "cper.hpp"
-#include "bert.hpp"
 
 #undef DEBUG
 #define OEM_EVENT               0xFA
-#define SENSOR_TYPE_OEM         0xF0
 
 #define CPER_FORMAT_TYPE        0
 
@@ -35,9 +34,6 @@ using namespace pldm::utils;
 
 namespace pldm
 {
-
-static std::unique_ptr<sdbusplus::bus::match_t> hostTransitionChangeSignal;
-static bool isBertTrigger = false;
 
 PldmMessagePollEvent::PldmMessagePollEvent(
     uint8_t eid, sdeventplus::Event& event, sdbusplus::bus::bus& bus,
@@ -47,8 +43,6 @@ PldmMessagePollEvent::PldmMessagePollEvent(
 {
     if (!std::filesystem::is_directory(CPER_LOG_PATH))
          std::filesystem::create_directories(CPER_LOG_PATH);
-    if (!std::filesystem::is_directory(CRASHDUMP_LOG_PATH))
-        std::filesystem::create_directories(CRASHDUMP_LOG_PATH);
 
     // register event class handler
     registerEventHandler(PLDM_MESSAGE_POLL_EVENT,
@@ -63,87 +57,6 @@ PldmMessagePollEvent::PldmMessagePollEvent(
                                         const std::vector<uint8_t> data) {
         return pldmPollForEventMessage(TID, eventClass, eventID, data);
     });
-
-    handlePldmDbusEventSignal();
-    handleBertHostOnEvent();
-}
-
-static void addSELLog(uint8_t TID, uint16_t eventID, AmpereSpecData *p)
-{
-    std::vector<uint8_t> evtData;
-    std::string message = "PLDM RAS SEL Event";
-    uint8_t recordType;
-    uint8_t evtData1, evtData2, evtData3, evtData4, evtData5, evtData6;
-    uint8_t socket;
-
-    /*
-     * OEM IPMI SEL Recode Format for RAS event:
-     * evtData1:
-     *    Bit [7:4]: eventClass
-     *        0xF: oemEvent for RAS
-     *    Bit [3:1]: Reserved
-     *    Bit 0: SocketID
-     *        0x0: Socket 0 0x1: Socket 1
-     * evtData2:
-     *    Event ID, indicates RAS PLDM sensor ID.
-     * evtData3:
-     *     Bit [7:4]: Payload Type
-     *     Bit [3:0]: Error Type ID - Bit [11:8]
-     * evtData4:
-     *     Error Type ID - Bit [7:0]
-     * evtData5:
-     *     Error Sub Type ID high byte
-     * evtData6:
-     *     Error Sub Type ID low byte
-     */
-    socket = (TID == 1) ? 0 : 1;
-    recordType = 0xD0;
-    evtData1 = SENSOR_TYPE_OEM | socket;
-    evtData2 = eventID;
-    evtData3 = ((p->typeId.member.payloadType << 4) & 0xF0) |
-               ((p->typeId.member.ipType >> 8) & 0xF);
-    evtData4 = p->typeId.member.ipType ;
-    evtData5 = p->subTypeId >> 8;
-    evtData6 = p->subTypeId;
-    /*
-     * OEM data bytes
-     *    Ampere IANA: 3 bytes [0x3a 0xcd 0x00]
-     *    event data: 9 bytes [evtData1 evtData2 evtData3
-     *                         evtData4 evtData5 evtData6
-     *                         0x00     0x00     0x00 ]
-     *    sel type: 1 byte [0xC0]
-     */
-    evtData.push_back(0x3a);
-    evtData.push_back(0xcd);
-    evtData.push_back(0);
-    evtData.push_back(evtData1);
-    evtData.push_back(evtData2);
-    evtData.push_back(evtData3);
-    evtData.push_back(evtData4);
-    evtData.push_back(evtData5);
-    evtData.push_back(evtData6);
-    evtData.push_back(0);
-    evtData.push_back(0);
-    evtData.push_back(0);
-
-    auto& bus = pldm::utils::DBusHandler::getBus();
-    try
-    {
-        auto method = bus.new_method_call(
-            "xyz.openbmc_project.Logging.IPMI", "/xyz/openbmc_project/Logging/IPMI",
-            "xyz.openbmc_project.Logging.IPMI", "IpmiSelAddOem");
-        method.append(message, evtData , recordType);
-
-        auto selReply =bus.call(method);
-        if (selReply.is_method_error())
-        {
-            std::cerr << "add SEL log error\n";
-        }
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "call SEL log error: " << e.what() << "\n" ;
-    }
 }
 
 int PldmMessagePollEvent::pldmPollForEventMessage(uint8_t TID,
@@ -169,8 +82,6 @@ int PldmMessagePollEvent::pldmPollForEventMessage(uint8_t TID,
 
     if (!std::filesystem::is_directory(CPER_LOG_DIR))
          std::filesystem::create_directories(CPER_LOG_DIR);
-    if (!std::filesystem::is_directory(BERT_LOG_DIR))
-         std::filesystem::create_directories(BERT_LOG_DIR);
 
     std::string cperFile = std::string(CPER_LOG_DIR) + "cper.dump";
     std::ofstream out (cperFile.c_str(), std::ofstream::binary);
@@ -183,56 +94,40 @@ int PldmMessagePollEvent::pldmPollForEventMessage(uint8_t TID,
     out.close();
 
     std::string prefix = "RAS_CPER_";
-    isBertTrigger = (ampHdr.typeId.member.isBert) ? true : false;
-
-    std::string bertTriggerFile = std::string(BERT_LOG_DIR) + "bert_trigger";
-    std::ofstream outBertTrigger (bertTriggerFile.c_str(), std::ofstream::binary);
-    if(!outBertTrigger.is_open())
-    {
-        std::cerr << "Can not open ofstream for bert_trigger file\n";
-        return -1;
-    }
-    char val = (isBertTrigger) ? '1': '0';
-    outBertTrigger.write(&val, sizeof(val));
-    outBertTrigger.close();
-
     std::string primaryLogId = pldm::utils::getUniqueEntryID(prefix);
     std::string type = "CPER";
     std::string faultLogFilePath = std::string(CPER_LOG_PATH) + primaryLogId;
     std::filesystem::copy(cperFile.c_str(), faultLogFilePath.c_str());
     std::filesystem::remove(cperFile.c_str());
 
-    addSELLog(TID, eventID, &ampHdr);
+    addCperSELLog(TID, eventID, &ampHdr);
     pldm::utils::addFaultLogToRedfish(primaryLogId, type);
+
+#ifdef AMPERE
+    if (ampHdr.typeId.member.isBert)
+    {
+        constexpr auto rasSrv = "com.ampere.CrashCapture.Trigger";
+        constexpr auto rasPath = "/com/ampere/crashcapture/trigger";
+        constexpr auto rasIntf = "com.ampere.CrashCapture.Trigger";
+        using namespace sdbusplus::xyz::openbmc_project::Logging::server;
+        std::variant<std::string> value("com.ampere.CrashCapture.Trigger.TriggerAction.Bert");
+        try
+        {
+            auto& bus = pldm::utils::DBusHandler::getBus();
+            auto method = bus.new_method_call(rasSrv,rasPath,
+                dbusProperties, "Set");
+            method.append(rasIntf, "TriggerActions", value);
+            bus.call_noreply(method);
+        }
+        catch(const std::exception& e)
+        {
+            std::cerr << "call BERT trigger error: " << e.what() << "\n" ;
+        }
+    }
+#endif
 
     return data.size();
 }
 
-void PldmMessagePollEvent::handlePldmDbusEventSignal()
-{
-    hostTransitionChangeSignal = std::make_unique<sdbusplus::bus::match_t>(
-            pldm::utils::DBusHandler::getBus(),
-            sdbusplus::bus::match::rules::propertiesChanged(
-                    "/xyz/openbmc_project/state/host0",
-                    "xyz.openbmc_project.State.Host"),
-                    [&](sdbusplus::message::message& msg) {
-        std::string statusInterface;
-        std::map<std::string, std::variant<std::string>> msgData;
-        msg.read(statusInterface, msgData);
-        auto propertyMap = msgData.find("CurrentHostState");
-        if (propertyMap != msgData.end())
-            {
-                // Extract the CurrentHostState
-                auto& currentHostState =
-                        std::get<std::string>(propertyMap->second);
-                if (currentHostState ==
-                    "xyz.openbmc_project.State.Host.HostState.TransitioningToOff")
-                {
-                    bertHandler(isBertTrigger, HOST_OFF);
-                    isBertTrigger = false;
-                }
-            }
-    });
-}
 
 } // namespace pldm

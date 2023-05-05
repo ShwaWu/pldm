@@ -8,6 +8,7 @@
 #include <vector>
 
 #define CPER_LOG_DIR               "/usr/share/pldm/cper/"
+#define SENSOR_TYPE_OEM            0xF0
 
 typedef struct {
     uint32_t  Data1;
@@ -409,5 +410,6 @@ typedef struct {
 void decodeCperRecord(std::vector<uint8_t> &data, long pos,
                       AmpereSpecData* ampSpecHdr,
                       std::ofstream &out);
+void addCperSELLog(uint8_t TID, uint16_t eventID, AmpereSpecData *p);
 
 #endif /* PLDM_COMMON_CPER_HPP_ */

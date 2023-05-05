@@ -228,10 +228,3 @@ option(
     value : '/var/lib/faultlogs/cper/',
     description : 'File system path containing CPER logs'
 )
-
-option('ampere-bert-hostoff-timer', type: 'integer', min: 10000, max: 50000, description: 'The amount of time a BMC need to wait before checking current host state in milliseconds', value: 20000)
-option('ampere-bert-hoston-timer', type: 'integer', min: 1000, max: 20000, description: 'The amount of time a BMC need to wait to make sure host send boot event to BMC in milliseconds', value: 5000)
-option('ampere-bert-hostfail-timer', type: 'integer', min: 60000, max: 180000, description: 'The amount of time a BMC need to wait to make sure host boot fail in milliseconds', value: 120000)
-option('ampere-bert-claim-spi-timer', type: 'integer', min: 100, max: 1000, description: 'The amount of time a BMC can claim the SPI in milliseconds', value: 500)
-option('ampere-handshake-spi-script', type : 'string', value : '/usr/sbin/ampere_spi_util.sh', description : 'Script to grant a permission to access SPI-NOR')
-option('crashdump-log-path', type : 'string', value : '/var/lib/faultlogs/crashdump/', description : 'File system path containing CrashDump logs')

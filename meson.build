@@ -61,11 +61,6 @@ endif
 if get_option('ampere').enabled()
   add_project_arguments('-DAMPERE', language : 'c')
   add_project_arguments('-DAMPERE', language : 'cpp')
-  conf_data.set('BERT_HOSTOFF_TIMEOUT', get_option('ampere-bert-hostoff-timer'))
-  conf_data.set('BERT_HOSTON_TIMEOUT', get_option('ampere-bert-hoston-timer'))
-  conf_data.set('BERT_HOSTFAIL_TIMEOUT', get_option('ampere-bert-hostfail-timer'))
-  conf_data.set('BERT_CLAIMSPI_TIMEOUT', get_option('ampere-bert-claim-spi-timer'))
-  conf_data.set_quoted('HANDSHAKE_SPI_SCRIPT', get_option('ampere-handshake-spi-script'))
 endif
 conf_data.set('NUMBER_OF_REQUEST_RETRIES', get_option('number-of-request-retries'))
 conf_data.set('INSTANCE_ID_EXPIRATION_INTERVAL',get_option('instance-id-expiration-interval'))
@@ -78,7 +73,6 @@ conf_data.set('NORMAL_RAS_EVENT_TIMER',get_option('normal-ras-event-timer'))
 conf_data.set('CRITICAL_RAS_EVENT_TIMER',get_option('critical-ras-event-timer'))
 conf_data.set('POLL_REQ_EVENT_TIMER',get_option('poll-req-event-timer'))
 conf_data.set_quoted('CPER_LOG_PATH', get_option('cper-log-path'))
-conf_data.set_quoted('CRASHDUMP_LOG_PATH', get_option('crashdump-log-path'))
 conf_data.set('MAXIMUM_TRANSFER_SIZE', get_option('maximum-transfer-size'))
 conf_data.set_quoted('EID_TO_NAME_JSON', join_paths(package_datadir, 'eid_to_name.json'))
 if get_option('transport-implementation') == 'mctp-demux'
@@ -111,11 +105,6 @@ if cpp.has_header('CLI/CLI.hpp')
 else
   CLI11_dep = dependency('CLI11')
 endif
-
-# Include libspinorfs as a static library, compiled with `make`.
-libspinorfs_dir = meson.current_source_dir() + '../recipe-sysroot/usr/lib'
-libspinorfs_dep = cpp.find_library('libspinorfs', dirs : libspinorfs_dir)
-#libspinorfs_dep = dependency('libspinorfs')
 
 if get_option('oe-sdk').enabled()
   # Setup OE SYSROOT
@@ -187,7 +176,6 @@ deps = [
   sdbusplus,
   sdeventplus,
   stdplus,
-  libspinorfs_dep,
 ]
 
 if get_option('libpldmresponder').enabled()
@@ -213,7 +201,6 @@ executable(
   'requester/pldm_message_poll_event.cpp',
   'requester/event_signal.cpp',
   'requester/cper.cpp',
-  'requester/bert_handler.cpp',
   'sensors/pldm_sensor.cpp',
   'sensors/hwmon.cpp',
   implicit_include_directories: false,

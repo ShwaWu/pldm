@@ -11,9 +11,6 @@
 #include "requester/request.hpp"
 #include "requester/terminus_manager.hpp"
 #include "requester/event_signal.hpp"
-#ifdef AMPERE
-#include "requester/bert.hpp"
-#endif
 
 #include <err.h>
 #include <getopt.h>
@@ -309,10 +306,6 @@ int main(int argc, char** argv)
 
     std::unique_ptr<PldmDbusEventSignal> eventSignal =
         std::make_unique<PldmDbusEventSignal>(devManager.get());
-
-#ifdef AMPERE
-    handleBertHostOffEvent();
-#endif
 
     auto callback = [verbose, &invoker, &reqHandler, &fwManager, &pldmTransport,
                      TID](IO& io, int fd, uint32_t revents) mutable {

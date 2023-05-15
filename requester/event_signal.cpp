@@ -89,12 +89,11 @@ void PldmDbusEventSignal::handleBootOverallEvent([[maybe_unused]]uint8_t tid,
     bool failFlg = false;
     std::stringstream strStream;
     std::string description;
-    /* Todo: remove this BE to LE convertion after rebase libpldm */
-    uint8_t byte3 = (presentReading & 0x000000ff);
-    uint8_t byte2 = (presentReading & 0x0000ff00) >> 8;
-    uint8_t byte1 = (presentReading & 0x00ff0000) >> 16;
-    uint8_t byte0 = (presentReading & 0xff000000) >> 24;
 
+    uint8_t byte0 = (presentReading & 0x000000ff);
+    uint8_t byte1 = (presentReading & 0x0000ff00) >> 8;
+    uint8_t byte2 = (presentReading & 0x00ff0000) >> 16;
+    uint8_t byte3 = (presentReading & 0xff000000) >> 24;
     /*
      * Handle SECpro, Mpro, ATF BL1, ATF BL2, ATF BL31,
      * ATF BL32 and DDR initialization
@@ -218,23 +217,8 @@ void PldmDbusEventSignal::handleBootOverallEvent([[maybe_unused]]uint8_t tid,
 }
 
 void PldmDbusEventSignal::handlePCIeHotPlugEvent(uint8_t tid,
-                [[maybe_unused]]uint16_t sensorId, uint32_t presentReadingBe)
+                [[maybe_unused]]uint16_t sensorId, uint32_t presentReading)
 {
-    /*
-     * Todo: remove this convertion after rebase libpldm
-     * MPRo will encode the LE 32 bits value to 4 data bytes in BE order, when
-     * BMC receives the NumericSensorState event data will be parsed by
-     * decode_numeric_sensor_data() in libpldm. This APIs should response the
-     * output presentReading reading value in LE form but this APIs is
-     * responnsing the BE 32 bits value.
-     * This cause belows below convertion steps.
-     * The bug in decode_numeric_sensor_data() is fixed in latest libpldm which
-     * will be available in next rebase.
-     */
-    uint32_t presentReading = ((presentReadingBe & 0x000000ff) << 24) +
-                              (((presentReadingBe & 0x0000ff00) >> 8) << 16) +
-                              (((presentReadingBe & 0x00ff0000) >> 16) << 8) +
-                              (((presentReadingBe & 0xff000000) >> 24) << 0);
     /*
      * PresentReading value format
      * FIELD       |                   COMMENT

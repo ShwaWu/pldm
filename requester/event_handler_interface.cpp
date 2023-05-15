@@ -193,12 +193,12 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
     isPolling = false;
     pollReqTimeoutTimer->stop();
 
-    std::vector<uint8_t> tmp(respMsgLen, 0);
+    uint8_t* eventData = nullptr;
 
     auto rc = decode_poll_for_platform_event_message_resp(
         response, respMsgLen, &retCompletionCode, &retTid, &retEventId,
         &retNextDataTransferHandle, &retTransferFlag, &retEventClass,
-        &retEventDataSize, tmp.data(), &retEventDataIntegrityChecksum);
+        &retEventDataSize, (void**)&eventData, &retEventDataIntegrityChecksum);
     if (rc != PLDM_SUCCESS)
     {
 #ifdef DEBUG
@@ -238,11 +238,14 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
 
     // found
     int flag = static_cast<int>(retTransferFlag);
+    std::vector<uint8_t> retEventData(retEventDataSize, 0);
+    memcpy(retEventData.data(), eventData, retEventDataSize);
 
     if (flag == PLDM_START)            /* Start part */
     {
         recvData.data.insert(recvData.data.begin(),
-                             tmp.begin(), tmp.begin() + retEventDataSize);
+                             retEventData.begin(),
+                             retEventData.begin() + retEventDataSize);
         recvData.totalSize += retEventDataSize;
         reqData.operationFlag = PLDM_GET_NEXTPART;
         reqData.dataTransferHandle = retNextDataTransferHandle;
@@ -251,7 +254,8 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
     else if (flag == PLDM_MIDDLE)       /* Middle part */
     {
         recvData.data.insert(recvData.data.begin() + reqData.dataTransferHandle,
-                             tmp.begin(), tmp.begin() + retEventDataSize);
+                             retEventData.begin(),
+                             retEventData.begin() + retEventDataSize);
         recvData.totalSize += retEventDataSize;
         reqData.operationFlag = PLDM_GET_NEXTPART;
         reqData.dataTransferHandle = retNextDataTransferHandle;
@@ -260,7 +264,8 @@ void EventHandlerInterface::processResponseMsg(mctp_eid_t /*eid*/,
     else if ((flag == PLDM_END) || (flag == PLDM_START_AND_END))  /* End part */
     {
         recvData.data.insert(recvData.data.begin() + reqData.dataTransferHandle,
-                             tmp.begin(), tmp.begin() + retEventDataSize);
+                             retEventData.begin(),
+                             retEventData.begin() + retEventDataSize);
         recvData.totalSize += retEventDataSize;
 
         /* eventDataIntegrityChecksum field is only used for multi-part transfer.

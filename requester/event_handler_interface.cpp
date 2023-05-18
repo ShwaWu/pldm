@@ -171,7 +171,6 @@ void EventHandlerInterface::reset()
     recvData.eventClass = 0;
     recvData.totalSize = 0;
     recvData.data.clear();
-    requester.markFree(eid, instanceId);
     pollEventReqTimer.setEnabled(false);
 }
 
@@ -330,6 +329,7 @@ void EventHandlerInterface::pollEventReqCb()
 
     if (rc != PLDM_SUCCESS)
     {
+        requester.markFree(eid, instanceId);
         std::cerr
             << "ERROR: Failed to encode_poll_for_platform_event_message_req(1), rc = "
             << rc << std::endl;
@@ -344,7 +344,6 @@ void EventHandlerInterface::pollEventReqCb()
     if (rc)
     {
         std::cerr << "ERROR: failed to send the poll request\n";
-        requester.markFree(eid, instanceId);
         return;
     }
 

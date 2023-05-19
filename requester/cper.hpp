@@ -402,6 +402,11 @@ typedef struct {
     PCIE_ERROR_DATA_AER                 AerInfo;
 } __attribute__((packed)) CPERSecPcieErr;
 
+#define ERROR_TYPE_PCIE_AER               7
+#define ERROR_SUBTYPE_PCIE_AER_ROOT_PORT  0
+#define ERROR_SUBTYPE_PCIE_AER_DEVICE     1
+#define CPER_PCIE_VALID_PORT_TYPE         0x0001
+#define CPER_PCIE_PORT_TYPE_ROOT_PORT     4
 
 /*----------------------------------------------------------------------------*/
 /*                               Common Header                                */

@@ -113,10 +113,23 @@ static void decodeSecPlatformMemory(void *section, AmpereSpecData* ampSpecHdr,
     }
 }
 
-static void decodeSecPcie(void *section, AmpereSpecData* /*ampSpecHdr*/,
+static void decodeSecPcie(void *section, AmpereSpecData* ampSpecHdr,
                           std::ofstream &out)
 {
+    CPERSecPcieErr *pcieErr = (CPERSecPcieErr*) section;
     out.write((char*)section, sizeof(CPERSecPcieErr));
+    if (pcieErr->ValidFields & CPER_PCIE_VALID_PORT_TYPE)
+    {
+        if (pcieErr->PortType == CPER_PCIE_PORT_TYPE_ROOT_PORT)
+        {
+            ampSpecHdr->subTypeId = ERROR_SUBTYPE_PCIE_AER_ROOT_PORT;
+        }
+        else
+        {
+            ampSpecHdr->subTypeId = ERROR_SUBTYPE_PCIE_AER_DEVICE;
+        }
+    }
+
 }
 
 static void decodeCperSection(std::vector<uint8_t> &data, long basePos,

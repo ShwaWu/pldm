@@ -131,13 +131,18 @@ class CommandInterface
         return commandName;
     }
 
-  private:
+    /**
+     * @brief get PLDM instance ID
+     *
+     * @return int - PLDM_SUCCESS in success. PLDM_ERROR in faulure.
+     */
+    int getInstanceId();
+
+  protected:
     const std::string pldmType;
     const std::string commandName;
     uint8_t mctp_eid;
     bool pldmVerbose;
-
-  protected:
     uint8_t numRetries = static_cast<uint8_t>(NUMBER_OF_REQUEST_RETRIES);
     uint8_t instanceId;
     int fd;

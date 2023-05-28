@@ -19,11 +19,11 @@ std::string fruPath = "/xyz/openbmc_project/pldm/fru";
 TerminusHandler::TerminusHandler(
     uint8_t eid, sdeventplus::Event& event, sdbusplus::bus::bus& bus,
     pldm_pdr* repo, pldm_entity_association_tree* entityTree,
-    pldm_entity_association_tree* bmcEntityTree, Requester& requester,
+    pldm_entity_association_tree* bmcEntityTree, InstanceIdDb& instanceIdDb,
     pldm::requester::Handler<pldm::requester::Request>* handler) :
     eid(eid),
     bus(bus), event(event), repo(repo), entityTree(entityTree),
-    bmcEntityTree(bmcEntityTree), requester(requester), handler(handler),
+    bmcEntityTree(bmcEntityTree), instanceIdDb(instanceIdDb), handler(handler),
     _state(), _timer(event, std::bind(&TerminusHandler::pollSensors, this)),
     _timer2(event, std::bind(&TerminusHandler::readSensor, this))
 {}
@@ -197,7 +197,7 @@ requester::Coroutine TerminusHandler::discoveryTerminus()
 
     /* Start RAS */
     eventDataHndl = std::make_shared<PldmMessagePollEvent>(eid, event, bus,
-                                                           requester, handler);
+                                                           instanceIdDb, handler);
 
     co_return PLDM_SUCCESS;
 }
@@ -253,12 +253,12 @@ requester::Coroutine TerminusHandler::getPLDMTypes()
     std::vector<uint8_t> requestMsg(sizeof(pldm_msg_hdr) +
                                     PLDM_GET_TYPES_RESP_BYTES);
     auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
-    auto instanceId = requester.getInstanceId(eid);
+    auto instanceId = instanceIdDb.next(eid);
 
     auto rc = encode_get_types_req(instanceId, request);
     if (rc != PLDM_SUCCESS)
     {
-        requester.markFree(eid, instanceId);
+        instanceIdDb.free(eid, instanceId);
         std::cerr << "Failed to encode_get_types_req, rc = " << unsigned(rc)
                   << std::endl;
         co_return rc;
@@ -333,7 +333,7 @@ requester::Coroutine TerminusHandler::getPLDMCommands()
 
 requester::Coroutine TerminusHandler::getPLDMCommand(const uint8_t& pldmTypeIdx)
 {
-    auto instanceId = requester.getInstanceId(eid);
+    auto instanceId = instanceIdDb.next(eid);
     Request requestMsg(sizeof(pldm_msg_hdr) + PLDM_GET_COMMANDS_REQ_BYTES);
     auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
     ver32_t version{0xFF, 0xFF, 0xFF, 0xFF};
@@ -341,7 +341,7 @@ requester::Coroutine TerminusHandler::getPLDMCommand(const uint8_t& pldmTypeIdx)
         encode_get_commands_req(instanceId, pldmTypeIdx, version, request);
     if (rc != PLDM_SUCCESS)
     {
-        requester.markFree(eid, instanceId);
+        instanceIdDb.free(eid, instanceId);
         std::cerr << "Failed to encode_get_commands_req, rc = " << unsigned(rc)
                   << std::endl;
         co_return rc;
@@ -403,13 +403,13 @@ requester::Coroutine TerminusHandler::getTID()
 {
     std::cerr << "Discovery Terminus: " << unsigned(eid) << " get TID."
               << std::endl;
-    auto instanceId = requester.getInstanceId(eid);
+    auto instanceId = instanceIdDb.next(eid);
     Request requestMsg(sizeof(pldm_msg_hdr));
     auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
     auto rc = encode_get_tid_req(instanceId, request);
     if (rc)
     {
-        requester.markFree(eid, instanceId);
+        instanceIdDb.free(eid, instanceId);
         std::cerr << "encode_get_tid_req failed. rc=" << unsigned(rc)
                   << std::endl;
         ;
@@ -473,7 +473,7 @@ requester::Coroutine TerminusHandler::setEventReceiver()
     uint8_t eventReceiverAddressInfo = 0x08;
     uint16_t heartbeatTimer = 0x78;
 
-    auto instanceId = requester.getInstanceId(eid);
+    auto instanceId = instanceIdDb.next(eid);
     Request requestMsg(sizeof(pldm_msg_hdr) +
                        PLDM_SET_EVENT_RECEIVER_REQ_BYTES);
 
@@ -483,7 +483,7 @@ requester::Coroutine TerminusHandler::setEventReceiver()
         eventReceiverAddressInfo, heartbeatTimer, request);
     if (rc != PLDM_SUCCESS)
     {
-        requester.markFree(eid, instanceId);
+        instanceIdDb.free(eid, instanceId);
         std::cerr << "Failed to encode_set_event_receiver_req, rc = "
                   << unsigned(rc) << std::endl;
         co_return rc;
@@ -587,14 +587,14 @@ requester::Coroutine TerminusHandler::setDateTime()
     std::vector<uint8_t> requestMsg(sizeof(pldm_msg_hdr) +
                                     sizeof(struct pldm_set_date_time_req));
     auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
-    auto instanceId = requester.getInstanceId(eid);
+    auto instanceId = instanceIdDb.next(eid);
 
     auto rc = encode_set_date_time_req(instanceId, seconds, minutes, hours, day,
                                        month, year, request,
                                        sizeof(struct pldm_set_date_time_req));
     if (rc != PLDM_SUCCESS)
     {
-        requester.markFree(eid, instanceId);
+        instanceIdDb.free(eid, instanceId);
         std::cerr << "Failed to encode_set_date_time_req, rc = " << unsigned(rc)
                   << std::endl;
         co_return PLDM_ERROR;
@@ -779,7 +779,7 @@ requester::Coroutine TerminusHandler::getFRURecordTableMetadata(uint16_t* total)
 {
     std::cerr << "Discovery Terminus: " << unsigned(eid)
               << " get FRU record Table Meta Data." << std::endl;
-    auto instanceId = requester.getInstanceId(eid);
+    auto instanceId = instanceIdDb.next(eid);
     Request requestMsg(sizeof(pldm_msg_hdr) +
                        PLDM_GET_FRU_RECORD_TABLE_METADATA_REQ_BYTES);
     auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
@@ -787,7 +787,7 @@ requester::Coroutine TerminusHandler::getFRURecordTableMetadata(uint16_t* total)
         instanceId, request, requestMsg.size() - sizeof(pldm_msg_hdr));
     if (rc != PLDM_SUCCESS)
     {
-        requester.markFree(eid, instanceId);
+        instanceIdDb.free(eid, instanceId);
         std::cerr << "Failed to encode_get_fru_record_table_metadata_req, rc = "
                   << unsigned(rc) << std::endl;
         co_return rc;
@@ -853,7 +853,7 @@ requester::Coroutine
         co_return PLDM_ERROR;
     }
 
-    auto instanceId = requester.getInstanceId(eid);
+    auto instanceId = instanceIdDb.next(eid);
     Request requestMsg(sizeof(pldm_msg_hdr) +
                        PLDM_GET_FRU_RECORD_TABLE_REQ_BYTES);
 
@@ -864,7 +864,7 @@ requester::Coroutine
         requestMsg.size() - sizeof(pldm_msg_hdr));
     if (rc != PLDM_SUCCESS)
     {
-        requester.markFree(eid, instanceId);
+        instanceIdDb.free(eid, instanceId);
         std::cerr << "Failed to encode_get_fru_record_table_req, rc = "
                   << unsigned(rc) << std::endl;
         co_return rc;
@@ -942,14 +942,14 @@ requester::Coroutine TerminusHandler::getDevPDR(uint32_t nextRecordHandle)
         {
             recordHandle = nextRecordHandle;
         }
-        auto instanceId = requester.getInstanceId(eid);
+        auto instanceId = instanceIdDb.next(eid);
 
         auto rc =
             encode_get_pdr_req(instanceId, recordHandle, 0, PLDM_GET_FIRSTPART,
                                UINT16_MAX, 0, request, PLDM_GET_PDR_REQ_BYTES);
         if (rc != PLDM_SUCCESS)
         {
-            requester.markFree(eid, instanceId);
+            instanceIdDb.free(eid, instanceId);
             std::cerr << "Failed to encode_get_pdr_req, rc = " << unsigned(rc)
                       << std::endl;
             co_return rc;
@@ -1885,7 +1885,7 @@ void TerminusHandler::getSensorReading(uint16_t sensor_id, uint8_t pdr_type)
     std::vector<uint8_t> requestMsg(sizeof(pldm_msg_hdr) + req_byte);
     auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
     uint8_t rearmEventState = 1;
-    auto instanceId = requester.getInstanceId(eid);
+    auto instanceId = instanceIdDb.next(eid);
 
     int rc = PLDM_ERROR;
     if (pdr_type == PLDM_COMPACT_NUMERIC_SENSOR_PDR)
@@ -1901,7 +1901,7 @@ void TerminusHandler::getSensorReading(uint16_t sensor_id, uint8_t pdr_type)
 
     if (rc != PLDM_SUCCESS)
     {
-        requester.markFree(eid, instanceId);
+        instanceIdDb.free(eid, instanceId);
         std::cerr << "Failed to reading sensor/effecter, rc = " << rc
                   << std::endl;
         return;

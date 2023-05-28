@@ -39,9 +39,9 @@ namespace pldm
 
 PldmMessagePollEvent::PldmMessagePollEvent(
     uint8_t eid, sdeventplus::Event& event, sdbusplus::bus::bus& bus,
-    pldm::dbus_api::Requester& requester,
+    InstanceIdDb& instanceIdDb,
     pldm::requester::Handler<pldm::requester::Request>* handler) :
-    EventHandlerInterface(eid, event, bus, requester, handler)
+    EventHandlerInterface(eid, event, bus, instanceIdDb, handler)
 {
     if (!std::filesystem::is_directory(CPER_LOG_PATH))
          std::filesystem::create_directories(CPER_LOG_PATH);

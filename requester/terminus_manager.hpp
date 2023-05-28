@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pldmd/dbus_impl_requester.hpp"
+#include "pldmd/instance_id.hpp"
 #include "requester/handler.hpp"
 #include "requester/request.hpp"
 #include "requester/terminus_handler.hpp"
@@ -47,11 +47,11 @@ class Manager
         sdbusplus::bus::bus& bus, sdeventplus::Event& event, pldm_pdr* repo,
         pldm_entity_association_tree* entityTree,
         pldm_entity_association_tree* bmcEntityTree,
-        pldm::dbus_api::Requester& requester,
+        InstanceIdDb& instanceIdDb,
         pldm::requester::Handler<pldm::requester::Request>* handler) :
         bus(bus),
         event(event), repo(repo), entityTree(entityTree),
-        bmcEntityTree(bmcEntityTree), requester(requester), handler(handler)
+        bmcEntityTree(bmcEntityTree), instanceIdDb(instanceIdDb), handler(handler)
     {
         if (!setupEIDtoTeminusName(EID_TO_NAME_JSON))
         {
@@ -72,7 +72,7 @@ class Manager
             std::cerr << "Adding terminus EID : " << unsigned(it) << std::endl;
 
             auto dev = std::make_unique<TerminusHandler>(
-                it, event, bus, repo, entityTree, bmcEntityTree, requester,
+                it, event, bus, repo, entityTree, bmcEntityTree, instanceIdDb,
                 handler);
 
             std::pair<bool, std::string> eidMap = std::make_pair(true, "");
@@ -138,10 +138,8 @@ class Manager
     /** @brief Pointer to BMC's entity association tree */
     pldm_entity_association_tree* bmcEntityTree;
 
-    /** @brief reference to Requester object, primarily used to access API to
-     *  obtain PLDM instance id.
-     */
-    pldm::dbus_api::Requester& requester;
+    /** @brief Instance ID database for managing instance ID*/
+    InstanceIdDb& instanceIdDb;
 
     /** @brief PLDM request handler */
     pldm::requester::Handler<pldm::requester::Request>* handler;

@@ -401,7 +401,7 @@ int HostEffecterParser::setTerminusNumericEffecter(size_t effecterInfoIndex,
                                                    double rawValue)
 {
     uint8_t& mctpEid = hostEffecterInfo[effecterInfoIndex].mctpEid;
-    auto instanceId = requester->getInstanceId(mctpEid);
+    auto instanceId = instanceIdDb->next(mctpEid);
     int rc = PLDM_ERROR;
     std::vector<uint8_t> requestMsg;
 
@@ -466,7 +466,7 @@ int HostEffecterParser::setTerminusNumericEffecter(size_t effecterInfoIndex,
     {
         std::cerr << "Message encode failure. PLDM error code = " << std::hex
                   << std::showbase << rc << "\n";
-        requester->markFree(mctpEid, instanceId);
+        instanceIdDb->free(mctpEid, instanceId);
         return rc;
     }
 

@@ -4,7 +4,7 @@
 
 #include "common/types.hpp"
 #include "pldmd/dbus_impl_fru.hpp"
-#include "pldmd/dbus_impl_requester.hpp"
+#include "pldmd/instance_id.hpp"
 #include "requester/handler.hpp"
 #include "requester/pldm_message_poll_event.hpp"
 #include "sensors/pldm_sensor.hpp"
@@ -116,7 +116,7 @@ class TerminusHandler
         uint8_t eid, sdeventplus::Event& event, sdbusplus::bus::bus& bus,
         pldm_pdr* repo, pldm_entity_association_tree* entityTree,
         pldm_entity_association_tree* bmcEntityTree,
-        pldm::dbus_api::Requester& requester,
+        InstanceIdDb& instanceIdDb,
         pldm::requester::Handler<pldm::requester::Request>* handler);
 
     TerminusHandler(const TerminusHandler&) = delete;
@@ -402,10 +402,8 @@ class TerminusHandler
     /** @brief Pointer to BMC's entity association tree */
     pldm_entity_association_tree* bmcEntityTree;
 
-    /** @brief reference to Requester object, primarily used to access API to
-     *  obtain PLDM instance id.
-     */
-    pldm::dbus_api::Requester& requester;
+    /** @brief Instance ID database for managing instance ID*/
+    InstanceIdDb& instanceIdDb;
 
     /** @brief PLDM request handler */
     pldm::requester::Handler<pldm::requester::Request>* handler;

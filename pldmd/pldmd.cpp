@@ -317,7 +317,7 @@ int main(int argc, char** argv)
     std::unique_ptr<terminus::Manager> devManager =
         std::make_unique<terminus::Manager>(
             bus, event, pdrRepo.get(), entityTree.get(), bmcEntityTree.get(),
-            dbusImplReq, &reqHandler);
+            instanceIdDb, &reqHandler);
     std::unique_ptr<fw_update::Manager> fwManager =
         std::make_unique<fw_update::Manager>(event, reqHandler, instanceIdDb);
     std::unique_ptr<MctpDiscovery> mctpDiscoveryHandler =

@@ -37,3 +37,4 @@ option('critical-ras-event-timer', type: 'integer', min: 25, max: 100, descripti
 option('poll-req-event-timer', type: 'integer', min: 25, max: 100, description: 'The amount of time a BMC send each part in multipart pollForEventMessage in milliseconds', value: 25)
 
 option('cper-log-path', type : 'string', value : '/var/lib/faultlogs/cper/', description : 'File system path containing CPER logs')
+option('ampere-pldm-event-handler-app', type : 'string', value : '/usr/sbin/ampere_pldm_event_handler.sh', description : 'Ampere PLDM event handler application to handl PLDM sensor/platformMessagePoll event')

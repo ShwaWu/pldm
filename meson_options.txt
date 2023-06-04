@@ -228,3 +228,11 @@ option(
     value : '/var/lib/faultlogs/cper/',
     description : 'File system path containing CPER logs'
 )
+
+option(
+    'ampere-pldm-event-handler-app',
+    type : 'string',
+    value : '/usr/sbin/ampere_pldm_event_handler.sh',
+    description: '''Ampere PLDM event handler application to handl PLDM
+                    sensor/platformMessagePoll event'''
+)

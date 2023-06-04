@@ -21,10 +21,6 @@ class PldmDbusEventSignal
 
     void PldmMessagePollEventSignal();
     void PldmNumericSensorEventSignal();
-    void handleBootOverallEvent([[maybe_unused]]uint8_t tid,
-                [[maybe_unused]]uint16_t sensorId, uint32_t presentReading);
-    void handlePCIeHotPlugEvent(uint8_t tid, [[maybe_unused]]uint16_t sensorId,
-                uint32_t presentReading);
 
   private:
 

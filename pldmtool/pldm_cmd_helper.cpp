@@ -217,7 +217,6 @@ int CommandInterface::pldmSendRecv(std::vector<uint8_t>& requestMsg,
             {
                 std::cerr << "[" << unsigned(retry)
                           << "] pldm_send_recv error rc" << rc << std::endl;
-                free(responseMessage);
                 retry++;
                 continue;
             }

@@ -21,6 +21,8 @@ class PldmDbusEventSignal
 
     void PldmMessagePollEventSignal();
     void PldmNumericSensorEventSignal();
+    void handleMCStateSensorEvent(uint8_t tid, [[maybe_unused]]uint16_t sensorId,
+                uint32_t presentReading, [[maybe_unused]]uint8_t eventState);
 
   private:
 

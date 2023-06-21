@@ -15,6 +15,8 @@
 #include <string_view>
 #include <vector>
 
+static constexpr uint16_t MCStateSensorID = 180;
+
 namespace pldm
 {
 
@@ -63,6 +65,101 @@ void PldmDbusEventSignal::PldmMessagePollEventSignal()
          });
 }
 
+void PldmDbusEventSignal::handleMCStateSensorEvent(uint8_t tid,
+                [[maybe_unused]]uint16_t sensorId, uint32_t presentReading, [[maybe_unused]]uint8_t eventState)
+{
+    /*
+     * PresentReading value format
+     * FIELD       |                   COMMENT
+     * Bit 31:16   |   Indicate status of the last FW update operation (16 bits):
+     *             |   0 = Operation successful
+     *             |   1 = Operation failed due to BMC acknowledgement failure
+     *             |   2 = Operation failed due to internal hardware error condition
+     *             |   3 = Operation failed due to firmware error condition                   
+     * Bit 15:3    |   Reserved (13 bits)
+     * Bit 2       |   Indicates FW update complete (1 bit)
+     * Bit 1       |   Reserved (1 bit)
+     * Bit 0       |   Indicates FW update initiated (1 bit)
+     */
+
+    std::cerr << "DEBUG: HandleMCStateSensorEvent presentReading is " << unsigned(presentReading) << "\n";
+
+    uint8_t fwUpdateInitiated = (presentReading & 0x00000001);
+    uint8_t fwUpdateComplete = (presentReading & 0x00000004) >> 2;
+    uint16_t lastFWUpdateStatus = (presentReading & 0xFFFF0000) >> 16;
+
+    std::stringstream strStream;
+    std::string description = "";
+    description += "IMPACTLESS UPDATE: ";
+
+    if (0x01 == fwUpdateInitiated)
+    {
+        strStream << "TID " << unsigned(tid) << " - Firmware Update Initiated";
+        description += strStream.str();
+        if (!description.empty())
+        {
+            std::string REDFISH_MESSAGE_ID = "OpenBMC.0.1.AmpereEvent";
+
+            sd_journal_send("MESSAGE=%s", description.c_str(),
+                            "REDFISH_MESSAGE_ID=%s",
+                            REDFISH_MESSAGE_ID.c_str(),
+                            "REDFISH_MESSAGE_ARGS=%s",
+                            description.c_str(), NULL);
+        }
+        devManager->startQuiesceMode(tid);
+    }
+    else if (0x01 == fwUpdateComplete)
+    {
+        if (0x00 == lastFWUpdateStatus)
+        {
+            strStream << "TID " << unsigned(tid) << " - Firmware Update SUCCEEDED";
+            description += strStream.str();
+            if (!description.empty())
+            {
+                std::string REDFISH_MESSAGE_ID = "OpenBMC.0.1.AmpereEvent";
+
+                sd_journal_send("MESSAGE=%s", description.c_str(),
+                                "REDFISH_MESSAGE_ID=%s",
+                                REDFISH_MESSAGE_ID.c_str(),
+                                "REDFISH_MESSAGE_ARGS=%s",
+                                description.c_str(), NULL);
+            }
+        }
+        else
+        {
+            strStream << "TID " << unsigned(tid) << " - Firmware Update FAILED";
+
+            switch (lastFWUpdateStatus)
+            {
+                case 0x01:
+                strStream << " - BMC Acknowledgement failure";
+                break;
+                case 0x02:
+                strStream << " - Internal hardware error";
+                break;
+                case 0x03:
+                strStream << " - Firmware error";
+                break;
+                default:
+                strStream << " - Unknown error";
+            }
+
+            description += strStream.str();
+            if (!description.empty())
+            {
+                std::string REDFISH_MESSAGE_ID = "OpenBMC.0.1.AmpereCritical";
+
+                sd_journal_send("MESSAGE=%s", description.c_str(),
+                                "REDFISH_MESSAGE_ID=%s",
+                                REDFISH_MESSAGE_ID.c_str(),
+                                "REDFISH_MESSAGE_ARGS=%s",
+                                description.c_str(), NULL);
+            }
+            devManager->notifyFWUpdateFailure(tid);
+        }
+    }
+}
+
 void PldmDbusEventSignal::PldmNumericSensorEventSignal()
 {
     pldmNumericSensorEventSignal = std::make_unique<sdbusplus::bus::match_t>(
@@ -87,12 +184,17 @@ void PldmDbusEventSignal::PldmNumericSensorEventSignal()
                  */
                 msg.read(tid, sensorId, eventState, preEventState,
                          sensorDataSize, presentReading);
-
+                // RAS sensors
                 if ((sensorId >= 191) && (sensorId <= 198))
                 {
                     if (devManager)
                         devManager->addEventMsg(tid, sensorId, PLDM_SENSOR_EVENT,
                                          PLDM_NUMERIC_SENSOR_STATE);
+                }
+                // MC State sensor
+                else if (sensorId == MCStateSensorID)
+                {
+                    handleMCStateSensorEvent(tid, sensorId, presentReading, eventState);
                 }
             }
             catch (const std::exception& e)

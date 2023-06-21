@@ -70,6 +70,9 @@ conf_data.set_quoted('CPER_LOG_PATH', get_option('cper-log-path'))
 conf_data.set_quoted('AMPERE_PLDM_EVENT_HANDLER', get_option('ampere-pldm-event-handler-app'))
 conf_data.set('MAXIMUM_TRANSFER_SIZE', get_option('maximum-transfer-size'))
 conf_data.set_quoted('EID_TO_NAME_JSON', join_paths(package_datadir, 'eid_to_name.json'))
+conf_data.set('IMPACTLESS_UPDATE_FINISH_RAS_TIMEOUT_MS', get_option('impactless_update_finish_ras_timeout_ms'))
+conf_data.set('IMPACTLESS_UPDATE_MPRO_RECOVERY_TIMEOUT_MS', get_option('impactless_update_mpro_recovery_timeout_ms'))
+conf_data.set('IMPACTLESS_UPDATE_TIMER_INTERVAL_MS', get_option('impactless_update_timer_interval_ms'))
 config = configure_file(output: 'config.h',
   configuration: conf_data
 )

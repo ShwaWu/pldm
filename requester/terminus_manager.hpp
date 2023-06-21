@@ -82,10 +82,38 @@ class Manager
             }
             dev->udpateEidMapping(eidMap);
             [[maybe_unused]] auto co = dev->discoveryTerminus();
-            dev->updateSensor();
+            dev->startSensorsPolling();
             mDevices[it] = std::move(dev);
         }
         return;
+    }
+
+    void startQuiesceMode(const uint8_t& tid)
+    {
+        for (auto devIt = mDevices.begin(); devIt != mDevices.end(); ++devIt)
+        {
+            auto dev = devIt->second.get();
+            if (tid != dev->getTid())
+            {
+                continue;
+            }
+            dev->startQuiesceMode();
+            break;
+        }
+    }
+
+    void notifyFWUpdateFailure(const uint8_t& tid)
+    {
+        for (auto devIt = mDevices.begin(); devIt != mDevices.end(); ++devIt)
+        {
+            auto dev = devIt->second.get();
+            if (tid != dev->getTid())
+            {
+                continue;
+            }
+            dev->notifyFWUpdateFailure();
+            break;
+        }
     }
 
     /** @brief Remove the MCTP devices from the managed devices list
@@ -113,7 +141,7 @@ class Manager
     void addEventMsg(uint8_t tid, uint8_t eventId, uint8_t eventType,
                      uint8_t eventClass)
     {
-        for ( auto it = mDevices.begin(); it != mDevices.end(); ++it  )
+        for (auto it = mDevices.begin(); it != mDevices.end(); ++it)
         {
             auto secondPtr = it->second.get();
             secondPtr->addEventMsg(tid, eventId, eventType, eventClass);

@@ -13,6 +13,7 @@
 #include <sdeventplus/source/event.hpp>
 #include <sdeventplus/utility/timer.hpp>
 
+#include <unistd.h>
 #include <map>
 
 namespace pldm
@@ -152,14 +153,23 @@ class TerminusHandler
      */
     requester::Coroutine discoveryTerminus();
 
-    /** @brief Start the time to get sensor info
+    /** @brief Start timer to get sensor info
      *
      *  @param - none
      *
      *  @return - none
      *
      */
-    void updateSensor();
+    void startSensorsPolling();
+
+    /** @brief Stop timer to get sensor info and discovery
+     *
+     *  @param - none
+     *
+     *  @return - none
+     *
+     */
+    void stopSensorsPolling();
 
     /** @brief Set terminus handler flag to false to stop polling or discovery
      *
@@ -182,6 +192,43 @@ class TerminusHandler
      */
     void addEventMsg(uint8_t tid, uint8_t eventId, uint8_t eventType,
                      uint8_t eventClass);
+
+    /** @brief Enter quiesce mode after polling all remaining RAS events
+     *  @details Stop hang detection service, sensor and event polling
+     *  after finishing polling the remaining RAS events. First, start
+     *  a timer to wait for RAS polling completion.
+     *
+     *  @param - none
+     *
+     *  @return - none
+     **/
+    void startQuiesceMode();
+
+    /** @brief Restart sensor and event polling
+     *
+     *  @param - none
+     *
+     *  @return - none
+     *
+     */
+    void restartSensorAndEventPolling();
+
+    /** @brief Get TID of this terminus handler
+     *
+     *  @param - none
+     *
+     *  @return - none
+     *
+     */
+    uint8_t getTid()
+    {
+        return devInfo.tid;
+    }
+
+    void notifyFWUpdateFailure()
+    {
+        fwUpdateFailed = true;
+    }
 
   private:
     /* DSP0248 Table1 PLDM monitoring and control data types */
@@ -381,6 +428,43 @@ class TerminusHandler
      */
     void updateSensorKeys();
 
+    /** @brief Start waiting for MPro recovery from impactless update.
+    *
+    *   @details MPro's state is read by executing ampere_request_mpro_state script.
+    *   If FW_BOOT_OK asserts within 60s, wait for MCTP interface. If MCTP interface
+    *   from MPro is ready within 60s, restart sensor and event polling and hang
+    *   detection service. Otherwise, do nothing.
+    *
+    *   @param[in] none
+    *
+    *   @return - none
+    */
+    requester::Coroutine waitForImpactlessUpdateRecovery();
+
+    /** @brief Start waiting for RAS polling completion:
+     *  1. Stop sensor polling
+     *  2. Stop event polling
+     *  3. Write to MC Control Effecter (effecterId = 254) to acknowledge host firmware update
+     *
+     *  @param[in] none
+     *
+     *  @return - none
+     */
+    void waitForRASPollingFinished();
+
+    /** @brief Set Numeric Effecter Value
+     *
+     *  @param[in] effecterId - Effecter ID
+     *  @param[in] effecterDataSize - Effecter data size
+     *  @param[in] effecterValue - pointer of the value buffer
+     *
+     *  @return - none
+     *
+     */
+    requester::Coroutine setNumericEffecterValue(uint16_t effecterId,
+                    uint8_t effecterDataSize, const uint8_t* effecterValue);
+    
+
     /** @brief map that captures various terminus information **/
     TLPDRMap tlPDRInfo;
 
@@ -473,6 +557,12 @@ class TerminusHandler
      *  milliseconds. The default value is 10 milliseconds
      */
     sdeventplus::utility::Timer<sdeventplus::ClockId::Monotonic> _timer2;
+
+    /** @brief Timer to wait for all RAS polling completion in impactless
+     *  update quiesce mode.
+     */
+    sdeventplus::utility::Timer<sdeventplus::ClockId::Monotonic> _timer3;
+
     /** @brief Polling sensor flag. True when pldmd is polling sensor values */
     bool pollingSensors = false;
     /** @brief Enable the measurement in polling sensors */
@@ -483,6 +573,10 @@ class TerminusHandler
     std::shared_ptr<PldmMessagePollEvent> eventDataHndl;
     /** @brief the flag to stop polling or discoverying */
     bool stopTerminusPolling = false;
+    /** @brief counter to wait for RAS polling completion */
+    uint16_t countNum = 0;
+    /** @brief Flag to indicate Impactless Update Failure */
+    bool fwUpdateFailed = false;
 };
 
 } // namespace terminus

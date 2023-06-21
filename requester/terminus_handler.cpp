@@ -14,7 +14,24 @@ namespace terminus
 
 using namespace pldm::sensor;
 using EpochTimeUS = uint64_t;
+
 std::string fruPath = "/xyz/openbmc_project/pldm/fru";
+static constexpr uint16_t MCControlEffecterID = 254;
+
+std::string exec(const char *cmd)
+{
+	std::array<char, 128> buffer;
+	std::string result;
+	std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
+	if (!pipe) {
+		std::cerr << "popen() failed!" << std::endl;
+		return "failed";
+	}
+	while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+		result += buffer.data();
+	}
+	return result;
+}
 
 TerminusHandler::TerminusHandler(
     uint8_t eid, sdeventplus::Event& event, sdbusplus::bus::bus& bus,
@@ -25,7 +42,8 @@ TerminusHandler::TerminusHandler(
     bus(bus), event(event), repo(repo), entityTree(entityTree),
     bmcEntityTree(bmcEntityTree), instanceIdDb(instanceIdDb), handler(handler),
     _state(), _timer(event, std::bind(&TerminusHandler::pollSensors, this)),
-    _timer2(event, std::bind(&TerminusHandler::readSensor, this))
+    _timer2(event, std::bind(&TerminusHandler::readSensor, this)),
+    _timer3(event, std::bind(&TerminusHandler::waitForRASPollingFinished, this))
 {}
 
 TerminusHandler::~TerminusHandler()
@@ -1548,9 +1566,9 @@ void TerminusHandler::parseAuxNamePDRs(const PDRList& sensorPDRs)
     return;
 }
 
-/** @brief Start the time to get sensor info
+/** @brief Start timer to get sensor info
  */
-void TerminusHandler::updateSensor()
+void TerminusHandler::startSensorsPolling()
 {
     readCount = 0;
     continuePollSensor = true;
@@ -1572,6 +1590,24 @@ void TerminusHandler::updateSensor()
     }
 
     return;
+}
+
+/** @brief Stop timer to get sensor info
+ */
+void TerminusHandler::stopSensorsPolling()
+{
+    continuePollSensor = false;
+    _timer.setEnabled(false);
+    _timer2.setEnabled(false);
+    _timer3.setEnabled(false);
+
+    // Set sensors values to Nan and Functional property to false for FANs speeds to be driven max
+    for (auto sensorIt = _sensorObjects.begin(); sensorIt != _sensorObjects.end(); ++sensorIt)
+    {
+        auto sensorObj = sensorIt->second.get();
+        sensorObj->setFunctionalStatus(false);
+        sensorObj->updateValue(std::numeric_limits<double>::quiet_NaN());
+    }
 }
 
 void TerminusHandler::removeUnavailableSensor(
@@ -1806,7 +1842,7 @@ void TerminusHandler::processSensorReading(mctp_eid_t, const pldm_msg* response,
                     << "rc=" << unsigned(rc) << ",cc=" << unsigned(cc) << " "
                     << unsigned(eid) << ":" << sid << std::endl;
             sensorValue = std::numeric_limits<double>::quiet_NaN();
-            operationalState = PLDM_SENSOR_ENABLED;
+            operationalState = PLDM_SENSOR_DISABLED;
         }
         else
         {
@@ -1955,6 +1991,214 @@ void TerminusHandler::addEventMsg(uint8_t tid, uint8_t eventId,
 
     if (eventDataHndl)
         eventDataHndl->addEventMsg(eventId, eventType, eventClass);
+}
+
+requester::Coroutine TerminusHandler::setNumericEffecterValue(uint16_t effecterId,
+                                uint8_t effecterDataSize, const uint8_t* effecterValue)
+{
+    uint8_t instanceId = instanceIdDb.next(eid);
+
+    Request requestMsg(sizeof(pldm_msg_hdr) + PLDM_SET_NUMERIC_EFFECTER_VALUE_MIN_REQ_BYTES + 3);
+    auto request = reinterpret_cast<pldm_msg*>(requestMsg.data());
+
+    size_t payloadLength = PLDM_SET_NUMERIC_EFFECTER_VALUE_MIN_REQ_BYTES;
+    if (effecterDataSize == PLDM_EFFECTER_DATA_SIZE_UINT16 ||
+        effecterDataSize == PLDM_EFFECTER_DATA_SIZE_SINT16)
+    {
+        payloadLength = PLDM_SET_NUMERIC_EFFECTER_VALUE_MIN_REQ_BYTES + 1;
+    }
+    if (effecterDataSize == PLDM_EFFECTER_DATA_SIZE_UINT32 ||
+        effecterDataSize == PLDM_EFFECTER_DATA_SIZE_SINT32)
+    {
+        payloadLength = PLDM_SET_NUMERIC_EFFECTER_VALUE_MIN_REQ_BYTES + 3;
+    }
+
+    auto rc = encode_set_numeric_effecter_value_req(instanceId, effecterId, effecterDataSize, effecterValue, request,
+                                        payloadLength);
+    if (rc != PLDM_SUCCESS)
+    {
+        instanceIdDb.free(eid, instanceId);
+        std::cerr << "Failed to set numeric effecter value, rc = " << rc
+                << std::endl;
+        co_return rc;
+    }
+
+    Response responseMsg{};
+    rc = co_await requester::sendRecvPldmMsg(*handler, eid, requestMsg,
+                                             responseMsg);
+    if (rc)
+    {
+        std::cerr << "Failed to send sendRecvPldmMsg, EID=" << unsigned(eid)
+                  << ", instanceId=" << unsigned(instanceId)
+                  << ", type=" << unsigned(PLDM_PLATFORM)
+                  << ", cmd= " << unsigned(PLDM_SET_NUMERIC_EFFECTER_VALUE)
+                  << ", rc=" << rc << std::endl;
+        ;
+        co_return rc;
+    }
+
+    uint8_t cc = 0;
+    payloadLength = responseMsg.size() - sizeof(struct pldm_msg_hdr);
+    auto response = reinterpret_cast<pldm_msg*>(responseMsg.data());
+    if (response == nullptr || !payloadLength)
+    {
+        std::cerr << "No response received for sendRecvPldmMsg, EID="
+                  << unsigned(eid) << ", instanceId=" << unsigned(instanceId)
+                  << ", type=" << unsigned(PLDM_PLATFORM)
+                  << ", cmd= " << unsigned(PLDM_SET_NUMERIC_EFFECTER_VALUE)
+                  << ", rc=" << rc << std::endl;
+        ;
+        co_return rc;
+    }
+
+    rc = decode_set_numeric_effecter_value_resp(response, payloadLength, &cc);
+
+    if (rc != PLDM_SUCCESS || cc != PLDM_SUCCESS)
+    {
+        std::cerr << "Faile to decode_set_numeric_effecter_value_resp"
+                  << ", rc=" << unsigned(rc) << " cc=" << unsigned(cc)
+                  << std::endl;
+        co_return cc;
+    }
+
+    co_return cc;
+}
+
+/**
+ * @brief Wait to retrieve normal operation after impactless update.
+ * @details Acknowledge impactless firmware update to MPro by
+ * setting value to effecter MC Control to MPro. From now,
+ * start a timer to wait for MPro recovery by watching FW_BOOT_OK GPIO
+ * assertion and MCTP Interface from MPro.
+ */
+requester::Coroutine TerminusHandler::waitForImpactlessUpdateRecovery()
+{
+    // Acknowledgement of firmware update
+    /*
+    *  Bit 31:9   |  Reserved
+    *  Bit 8      |  Acknowledgement of firmware update
+    *  Bit 7:0    |  1 - Enabled (default); 3 - Shutdown (All MCs are halted).
+    */
+    uint32_t MCControlEffecterValue = (0x00000001 | 0x00000100);
+    uint8_t* valuePtr = (uint8_t*)&MCControlEffecterValue;
+    auto rc = co_await setNumericEffecterValue(MCControlEffecterID, PLDM_EFFECTER_DATA_SIZE_UINT32, valuePtr);
+
+    if (rc != PLDM_SUCCESS)
+    {
+        // [Chau Ly] Should we restart everything immediately???
+        restartSensorAndEventPolling();
+        std::cerr << "IMPACTLESS UPDATE: Failed to acknowledge impactless update\n";
+        co_return rc;
+    }
+
+    std::stringstream strStream;
+    std::string description = "";
+    description += "IMPACTLESS UPDATE: ";
+
+    strStream << "TID " << unsigned(devInfo.tid) << " - BMC Acknowledged";
+
+    description += strStream.str();
+    if (!description.empty())
+    {
+        std::string REDFISH_MESSAGE_ID = "OpenBMC.0.1.AmpereEvent";
+
+        sd_journal_send("MESSAGE=%s", description.c_str(),
+                        "REDFISH_MESSAGE_ID=%s",
+                        REDFISH_MESSAGE_ID.c_str(),
+                        "REDFISH_MESSAGE_ARGS=%s",
+                        description.c_str(), NULL);
+    }
+    co_return rc;
+}
+
+/**
+ * @brief Start waiting for RAS polling completion to:
+ * 1. Stop sensor polling
+ * 2. Stop event polling
+ * 3. Write to MC Control Effecter (effecterId = 254) to acknowledge host firmware update
+ */
+void TerminusHandler::waitForRASPollingFinished()
+{
+    if (!eventDataHndl)
+    {
+        return;
+    }
+    if (eventDataHndl->areBMCRASQueuesEmpty() && eventDataHndl->areMProRASQueuesEmpty())
+    {
+        std::cerr << "DEBUG: Polling all remaining RAS is finished after "
+                  << unsigned(countNum*IMPACTLESS_UPDATE_TIMER_INTERVAL_MS/1000) << " seconds \n";
+        stopSensorsPolling();
+        eventDataHndl->stopEventSignalPolling();
+        eventDataHndl->inQuiesceMode(false);
+        countNum = 0;
+
+        // Stop hang dectection service
+        if (system("systemctl stop ampere-sysfw-hang-handler.service"))
+        {
+            error("Failed to call stop hand-detection service");
+        }
+
+        [[maybe_unused]] auto co = waitForImpactlessUpdateRecovery();
+        return;
+    }
+    else
+    {
+        // Polling RAS is not finished within timeout
+        if (countNum >= (uint16_t)(IMPACTLESS_UPDATE_FINISH_RAS_TIMEOUT_MS/IMPACTLESS_UPDATE_TIMER_INTERVAL_MS))
+        {
+            eventDataHndl->inQuiesceMode(false);
+            countNum = 0;
+            //Log to REDFISH
+            std::stringstream strStream;
+            std::string description = "";
+            description += "IMPACTLESS UPDATE: ";
+
+            strStream << "TID " << unsigned(devInfo.tid) << " - Quiesce mode FAILED, Polling RAS is not done within timer";
+
+            description += strStream.str();
+            if (!description.empty())
+            {
+                std::string REDFISH_MESSAGE_ID = "OpenBMC.0.1.AmpereEvent";
+
+                sd_journal_send("MESSAGE=%s", description.c_str(),
+                                "REDFISH_MESSAGE_ID=%s",
+                                REDFISH_MESSAGE_ID.c_str(),
+                                "REDFISH_MESSAGE_ARGS=%s",
+                                description.c_str(), NULL);
+            }
+            return;
+        }
+        else
+        {
+            countNum++;
+        }
+    }
+    _timer3.restartOnce(std::chrono::milliseconds(IMPACTLESS_UPDATE_TIMER_INTERVAL_MS)); //100ms
+    return;
+}
+
+/** @brief Enter quiesce mode after polling all remaining RAS events
+ *  @details Stop hang detection service, sensor and event polling
+ *  after finishing polling the remaining RAS events. First, start
+ *  a timer to wait for RAS polling completion.
+ */
+void TerminusHandler::startQuiesceMode()
+{
+    eventDataHndl->inQuiesceMode(true);
+    _timer3.restartOnce(std::chrono::milliseconds(IMPACTLESS_UPDATE_TIMER_INTERVAL_MS)); //100ms
+}
+
+/** @brief Restart sensor and event polling
+ */
+void TerminusHandler::restartSensorAndEventPolling()
+{
+    startSensorsPolling();
+    eventDataHndl->startEventSignalPolling();
+    // Start hang dectection service
+    if (system("systemctl start ampere-sysfw-hang-handler.service"))
+    {
+        error("Failed to call call stop hand-detection service");
+    }
 }
 
 } // namespace terminus

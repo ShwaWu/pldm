@@ -43,7 +43,8 @@ TerminusHandler::TerminusHandler(
     bmcEntityTree(bmcEntityTree), instanceIdDb(instanceIdDb), handler(handler),
     _state(), _timer(event, std::bind(&TerminusHandler::pollSensors, this)),
     _timer2(event, std::bind(&TerminusHandler::readSensor, this)),
-    _timer3(event, std::bind(&TerminusHandler::waitForRASPollingFinished, this))
+    _timer3(event, std::bind(&TerminusHandler::waitForRASPollingFinished, this)),
+    _timer4(event, std::bind(&TerminusHandler::waitForMProRecovery, this))
 {}
 
 TerminusHandler::~TerminusHandler()
@@ -2064,6 +2065,161 @@ requester::Coroutine TerminusHandler::setNumericEffecterValue(uint16_t effecterI
     co_return cc;
 }
 
+/** 
+ *  @brief Start waiting for MPro recovery from impactless update.
+ *  @details MPro's state is read by executing ampere_request_mpro_state script.
+ *  If FW_BOOT_OK asserts within 60s, wait for MCTP interface. If MCTP interface
+ *  from MPro is ready within 60s, restart sensor and event polling and hang
+ *  detection service. Otherwise, do nothing.
+ */
+void TerminusHandler::waitForMProRecovery()
+{
+    std::string socket(&eidToName.second[1], 1);
+    std::string command = "/usr/sbin/ampere_request_mpro_state.sh";
+
+    if (!std::filesystem::exists(command))
+    {
+        error("IMPACTLESS UPDATE: Script to wait for MPro recovery does not exist");
+        return;
+    }
+    command += " " + socket + " ";
+    MProState stateRequest;
+    switch (mProState)
+    {
+        case MProState::MProQuiesce: /* MPro is in quiesce mode, wait for FW_BOOT_OK to deassert.
+                                        Request to read FW_BOOT_OK state */
+            stateRequest  = MProState::MProDown;
+            command += "fwboot";
+            break;
+        case MProState::MProDown: /* Request to read FW_BOOT_OK state */
+            stateRequest  = MProState::MProUp;
+            command += "fwboot";
+            break;
+        case MProState::MProUp: /* Request to read MCTP interface state */
+            stateRequest  = MProState::MCTPReady;
+            command += "mctpinf";
+            break;
+        case MProState::MCTPReady: /* Temporarily: MPro has recovered - Return */
+            _timer4.setEnabled(false);
+            return;
+        case MProState::MProReady: /* MPro has recovered - Return */
+            _timer4.setEnabled(false);
+            return;
+        default:
+            error("IMPACTLESS UPDATE: Invalid Mpro State Request");
+            _timer4.setEnabled(false);
+            return;
+    }
+
+    std::stringstream strStream;
+    std::string description = "IMPACTLESS UPDATE: ";
+
+    std::string status = exec(command.c_str());
+    if (status.find("0") != std::string::npos) /* MPro's requested status is on */
+    {
+        if (stateRequest == MProState::MProDown)
+        {
+            if (fwUpdateFailed)
+            {
+                // MC State returns Impactless Update has failed,
+                // resume operation
+                fwUpdateFailed = false;
+                mProState = MProState::MProReady;
+                _timer4.setEnabled(false);
+                restartSensorAndEventPolling();
+                return;
+            }
+            // else: wait for FW_BOOT_OK to deassert
+        }
+        else if (stateRequest == MProState::MProUp)
+        {
+            mProState = stateRequest;
+            countNum = 0;
+
+            strStream << "TID " << unsigned(devInfo.tid) << " - FW_BOOT_OK asserted";
+
+            description += strStream.str();
+            if (!description.empty())
+            {
+                std::string REDFISH_MESSAGE_ID = "OpenBMC.0.1.AmpereEvent";
+
+                sd_journal_send("MESSAGE=%s", description.c_str(),
+                                "REDFISH_MESSAGE_ID=%s",
+                                REDFISH_MESSAGE_ID.c_str(),
+                                "REDFISH_MESSAGE_ARGS=%s",
+                                description.c_str(), NULL);
+            }
+        }
+        else if (stateRequest == MProState::MCTPReady)
+        {
+            // TODO [Chau Ly]: In the future, might wait some seconds
+            // after MTCP interface is ready before resuming actions to MPro.
+            mProState = stateRequest;
+            mProState = MProState::MProReady;
+
+            strStream << "TID " << unsigned(devInfo.tid) << " - MPro MCTP Interface is ready";
+
+            description += strStream.str();
+            if (!description.empty())
+            {
+                std::string REDFISH_MESSAGE_ID = "OpenBMC.0.1.AmpereEvent";
+
+                sd_journal_send("MESSAGE=%s", description.c_str(),
+                                "REDFISH_MESSAGE_ID=%s",
+                                REDFISH_MESSAGE_ID.c_str(),
+                                "REDFISH_MESSAGE_ARGS=%s",
+                                description.c_str(), NULL);
+            }
+            _timer4.setEnabled(false);
+            restartSensorAndEventPolling();
+            return;
+        }
+    }
+    else /* MPro's requested status is not on */
+    {
+        if (stateRequest == MProState::MProDown) /* FW_BOOT_OK has deasserted */
+        {
+            strStream << "TID " << unsigned(devInfo.tid) << " - FW_BOOT_OK desserted";
+            description += strStream.str();
+            if (!description.empty())
+            {
+                std::string REDFISH_MESSAGE_ID = "OpenBMC.0.1.AmpereEvent";
+
+                sd_journal_send("MESSAGE=%s", description.c_str(),
+                                "REDFISH_MESSAGE_ID=%s",
+                                REDFISH_MESSAGE_ID.c_str(),
+                                "REDFISH_MESSAGE_ARGS=%s",
+                                description.c_str(), NULL);
+            }
+            mProState = stateRequest;
+        }
+        else
+        {
+            if (countNum >= (uint16_t)(IMPACTLESS_UPDATE_MPRO_RECOVERY_TIMEOUT_MS/IMPACTLESS_UPDATE_TIMER_INTERVAL_MS))
+            {
+                strStream << "TID " << unsigned(devInfo.tid) << " - Timeout waiting for MPro recovery";
+
+                description += strStream.str();
+                if (!description.empty())
+                {
+                    std::string REDFISH_MESSAGE_ID = "OpenBMC.0.1.AmpereCritical";
+
+                    sd_journal_send("MESSAGE=%s", description.c_str(),
+                                    "REDFISH_MESSAGE_ID=%s",
+                                    REDFISH_MESSAGE_ID.c_str(),
+                                    "REDFISH_MESSAGE_ARGS=%s",
+                                    description.c_str(), NULL);
+                }
+                _timer4.setEnabled(false);
+                return;
+            }
+            countNum++;
+        }
+    }
+    _timer4.restartOnce(std::chrono::milliseconds(IMPACTLESS_UPDATE_TIMER_INTERVAL_MS)); //100ms
+    return;
+}
+
 /**
  * @brief Wait to retrieve normal operation after impactless update.
  * @details Acknowledge impactless firmware update to MPro by
@@ -2108,6 +2264,8 @@ requester::Coroutine TerminusHandler::waitForImpactlessUpdateRecovery()
                         "REDFISH_MESSAGE_ARGS=%s",
                         description.c_str(), NULL);
     }
+    mProState = MProState::MProQuiesce;
+    _timer4.restartOnce(std::chrono::milliseconds(IMPACTLESS_UPDATE_TIMER_INTERVAL_MS)); //100ms
     co_return rc;
 }
 

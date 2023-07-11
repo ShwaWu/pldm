@@ -439,6 +439,19 @@ class TerminusHandler
     *
     *   @return - none
     */
+    void waitForMProRecovery();
+
+    /** @brief Wait to retrieve normal operation after impactless update.
+     *
+     *  @details Acknowledge impactless firmware update to MPro by
+     *  setting value to effecter MC Control to MPro. From now,
+     *  start a timer to wait for MPro recovery by watching FW_BOOT_OK GPIO
+     *  assertion and MCTP Interface from MPro.
+     *
+     *  @param[in] none
+     *
+     *  @return - none
+     */
     requester::Coroutine waitForImpactlessUpdateRecovery();
 
     /** @brief Start waiting for RAS polling completion:
@@ -563,6 +576,9 @@ class TerminusHandler
      */
     sdeventplus::utility::Timer<sdeventplus::ClockId::Monotonic> _timer3;
 
+    /** @brief Timer to wait for MPro recovery after impactless update.
+     */
+    sdeventplus::utility::Timer<sdeventplus::ClockId::Monotonic> _timer4;
     /** @brief Polling sensor flag. True when pldmd is polling sensor values */
     bool pollingSensors = false;
     /** @brief Enable the measurement in polling sensors */
@@ -577,6 +593,18 @@ class TerminusHandler
     uint16_t countNum = 0;
     /** @brief Flag to indicate Impactless Update Failure */
     bool fwUpdateFailed = false;
+
+    enum MProState
+    {
+        MProQuiesce = 0,
+        MProDown,
+        MProUp,
+        MCTPReady,
+        MProReady
+    };
+
+    /** @brief  MPro state during impactless update*/
+    MProState mProState = MProState::MProDown;
 };
 
 } // namespace terminus

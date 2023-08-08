@@ -151,7 +151,7 @@ void MctpDiscovery::removeEndpoints(sdbusplus::message_t& msg)
     try
     {
         auto method = bus.new_method_call(
-            "xyz.openbmc_project.MCTP.Control", "/xyz/openbmc_project/mctp",
+            "xyz.openbmc_project.MCTP", "/xyz/openbmc_project/mctp",
             "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
         auto reply = bus.call(method);
         reply.read(objects);

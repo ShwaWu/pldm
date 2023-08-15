@@ -233,10 +233,9 @@ void addCperSELLog(uint8_t TID, uint16_t eventID, AmpereSpecData *p)
      * evtData2:
      *    Event ID, indicates RAS PLDM sensor ID.
      * evtData3:
-     *     Bit [7:4]: Payload Type
-     *     Bit [3:0]: Error Type ID - Bit [11:8]
+     *     Error Type ID high byte - Bit [15:8]
      * evtData4:
-     *     Error Type ID - Bit [7:0]
+     *     Error Type ID low byte - Bit [7:0]
      * evtData5:
      *     Error Sub Type ID high byte
      * evtData6:
@@ -246,9 +245,8 @@ void addCperSELLog(uint8_t TID, uint16_t eventID, AmpereSpecData *p)
     recordType = 0xD0;
     evtData1 = SENSOR_TYPE_OEM | socket;
     evtData2 = eventID;
-    evtData3 = ((p->typeId.member.payloadType << 4) & 0xF0) |
-               ((p->typeId.member.ipType >> 8) & 0xF);
-    evtData4 = p->typeId.member.ipType ;
+    evtData3 = p->typeId.type >> 8;
+    evtData4 = p->typeId.type;
     evtData5 = p->subTypeId >> 8;
     evtData6 = p->subTypeId;
     /*

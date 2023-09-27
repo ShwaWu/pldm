@@ -429,6 +429,13 @@ void EventHandlerInterface::addEventMsg(uint8_t eventId, uint8_t eventType,
         std::cerr << "Overflow: " << eventId << "\n";
         enqueueOverflowEvent(eventId);
     }
+#ifdef AMPERE
+    if (eventId == 200)
+    {
+        /* handle event id 200 as soon as possible */
+        criticalEventCb();
+    }
+#endif
 }
 
 } // namespace pldm

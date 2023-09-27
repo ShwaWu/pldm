@@ -572,6 +572,9 @@ int Handler::pldmMsgPollEvent(const pldm_msg* request, size_t payloadLength,
     }
 
 #ifdef AMPERE
+        rc = emitPldmMessagePollEventSignal(tid, PLDM_MESSAGE_POLL_EVENT,
+                                            evtFormatVersion, evtID,
+                                            evtDataTransferHandle);
         std::string ampere_scripts = AMPERE_PLDM_EVENT_HANDLER;
         if (std::filesystem::exists(ampere_scripts))
         {
@@ -585,11 +588,12 @@ int Handler::pldmMsgPollEvent(const pldm_msg* request, size_t payloadLength,
                 error("Failed to call ampere_scripts.");
             }
         }
-#endif
-
+        return rc;
+#else
     return emitPldmMessagePollEventSignal(tid, PLDM_MESSAGE_POLL_EVENT,
                                           evtFormatVersion, evtID,
                                           evtDataTransferHandle);
+#endif
 }
 
 int Handler::pldmPDRRepositoryChgEvent(const pldm_msg* request,

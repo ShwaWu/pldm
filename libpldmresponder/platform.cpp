@@ -344,14 +344,19 @@ Response Handler::platformEventMessage(const pldm_msg* request,
         try
         {
             const auto& handlers = eventHandlers.at(eventClass);
+            bool handled = false;
             for (const auto& handler : handlers)
             {
                 auto rc = handler(request, payloadLength, formatVersion, tid,
                                   offset);
-                if (rc != PLDM_SUCCESS)
+                if (rc == PLDM_SUCCESS)
                 {
-                    return CmdHandler::ccOnlyResponse(request, rc);
+                    handled = true;
                 }
+            }
+            if (handled == false)
+            {
+                return CmdHandler::ccOnlyResponse(request, rc);
             }
         }
         catch (const std::out_of_range& e)
@@ -519,8 +524,6 @@ int Handler::sensorEvent(const pldm_msg* request, size_t payloadLength,
         }
 #endif
 
-        emitNumericSensorEventSignal(tid, sensorId, eventState, preEventState,
-                                     sensorDataSize, presentReading);
     }
     else
     {
@@ -572,9 +575,6 @@ int Handler::pldmMsgPollEvent(const pldm_msg* request, size_t payloadLength,
     }
 
 #ifdef AMPERE
-        rc = emitPldmMessagePollEventSignal(tid, PLDM_MESSAGE_POLL_EVENT,
-                                            evtFormatVersion, evtID,
-                                            evtDataTransferHandle);
         std::string ampere_scripts = AMPERE_PLDM_EVENT_HANDLER;
         if (std::filesystem::exists(ampere_scripts))
         {
@@ -590,9 +590,7 @@ int Handler::pldmMsgPollEvent(const pldm_msg* request, size_t payloadLength,
         }
         return rc;
 #else
-    return emitPldmMessagePollEventSignal(tid, PLDM_MESSAGE_POLL_EVENT,
-                                          evtFormatVersion, evtID,
-                                          evtDataTransferHandle);
+    return PLDM_SUCCESS;
 #endif
 }
 

@@ -13,7 +13,9 @@
 #include <sdeventplus/exception.hpp>
 #include <sdeventplus/source/io.hpp>
 #include <sdeventplus/source/time.hpp>
+#ifdef AMPERE
 #include "com/ampere/CrashCapture/Trigger/server.hpp"
+#endif
 
 #include <algorithm>
 #include <chrono>

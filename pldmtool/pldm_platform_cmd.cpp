@@ -241,6 +241,11 @@ class GetPDR : public CommandInterface
             else
             {
                 recordHandle = nextRecordHndl;
+                if ((transferFlag != PLDM_END) &&
+                    (transferFlag != PLDM_START_AND_END))
+                {
+                    recordHandle = nextRecordHndl + 1;
+                }
                 return;
             }
         }
@@ -249,6 +254,11 @@ class GetPDR : public CommandInterface
         {
             printPDRMsg(nextRecordHndl, respCnt, recordData, terminusHandle);
             recordHandle = nextRecordHndl;
+            if ((transferFlag != PLDM_END) &&
+                (transferFlag != PLDM_START_AND_END))
+            {
+                recordHandle = nextRecordHndl + 1;
+            }
         }
     }
 

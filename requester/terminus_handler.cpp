@@ -1071,6 +1071,18 @@ requester::Coroutine TerminusHandler::processDevPDRs(mctp_eid_t& /*eid*/,
                   << ", cc=" << unsigned(completionCode) << std::endl;
         co_return rc;
     }
+
+    /*
+     * Temporary: If PDR is multi-part PDR just get the first part then go to
+     * next PDRs
+     * Todo: Support multi-part in getting PDRs.
+     */
+    if ((*nextRecordHandle) && (transferFlag != PLDM_END) &&
+        (transferFlag != PLDM_START_AND_END))
+    {
+        *nextRecordHandle = *nextRecordHandle + 1;
+    }
+
     // when nextRecordHandle is 0, we need the recordHandle of the last
     // PDR and not 0-1.
     if (!(*nextRecordHandle))

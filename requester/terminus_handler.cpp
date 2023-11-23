@@ -1004,7 +1004,7 @@ requester::Coroutine TerminusHandler::getDevPDR(uint32_t nextRecordHandle)
             co_return rc;
         }
         rc = co_await processDevPDRs(eid, response, respMsgLen,
-                                     &nextRecordHandle);
+                                     &nextRecordHandle, recordHandle);
         if (rc)
         {
             std::cerr << "Failed to send processDevPDRs, EID=" << unsigned(eid)
@@ -1025,7 +1025,8 @@ requester::Coroutine TerminusHandler::getDevPDR(uint32_t nextRecordHandle)
 requester::Coroutine TerminusHandler::processDevPDRs(mctp_eid_t& /*eid*/,
                                                      const pldm_msg* response,
                                                      size_t& respMsgLen,
-                                                     uint32_t* nextRecordHandle)
+                                                     uint32_t* nextRecordHandle,
+                                                     uint32_t recordHandle)
 {
     uint8_t tlEid = 0;
     bool tlValid = true;
@@ -1080,7 +1081,7 @@ requester::Coroutine TerminusHandler::processDevPDRs(mctp_eid_t& /*eid*/,
     if ((*nextRecordHandle) && (transferFlag != PLDM_END) &&
         (transferFlag != PLDM_START_AND_END))
     {
-        *nextRecordHandle = *nextRecordHandle + 1;
+        *nextRecordHandle = recordHandle + 1;
     }
 
     // when nextRecordHandle is 0, we need the recordHandle of the last

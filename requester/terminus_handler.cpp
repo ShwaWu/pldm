@@ -1832,10 +1832,13 @@ void TerminusHandler::processSensorReading(mctp_eid_t, const pldm_msg* response,
 
         std::unique_ptr<PldmSensor>& sensorObj =
         _sensorObjects[*(this->sensorKey)];
-        sensorObj->updateValue(std::numeric_limits<double>::quiet_NaN());
-        sensorObj->setFunctionalStatus(false);
-        /* Go to next sensor */
-        this->sensorKey++;
+        if (sensorObj)
+        {
+            sensorObj->updateValue(std::numeric_limits<double>::quiet_NaN());
+            sensorObj->setFunctionalStatus(false);
+            /* Go to next sensor */
+            this->sensorKey++;
+        }
     }
     else
     {
